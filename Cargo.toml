@@ -1,0 +1,4 @@
+[workspace]
+members = ["crates/qmi8658"]
+exclude = ["apps/qa-runner", "apps/imu-example"]
+resolver = "3"

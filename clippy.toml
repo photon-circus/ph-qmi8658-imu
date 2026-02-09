@@ -1,0 +1,30 @@
+# Clippy configuration for ESP32 EMAC driver
+# See: https://doc.rust-lang.org/clippy/lint_configuration.html
+# Lint levels are defined in src/lib.rs; this file only stores configuration values.
+
+# MSRV for this project (Rust 2024 edition)
+msrv = "1.92.0"
+
+# Allow slightly longer functions for driver code
+too-many-lines-threshold = 150
+
+# Hardware drivers often need many arguments for configuration
+too-many-arguments-threshold = 10
+
+# Embedded code often has deeper type nesting
+type-complexity-threshold = 350
+
+# Allow more struct fields for configuration structs
+max-struct-bools = 4
+
+# Max function bool parameters
+max-fn-params-bools = 4
+
+# Cognitive complexity threshold for functions
+cognitive-complexity-threshold = 30
+
+# Allow these short identifiers (common in embedded)
+allowed-idents-below-min-chars = ["i", "n", "x", "y", "id", "ok", "rx", "tx"]
+
+# Threshold for single char binding names
+single-char-binding-names-threshold = 5
