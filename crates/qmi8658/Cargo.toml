@@ -1,12 +1,14 @@
 [package]
 name = "ph-qmi8658"
 version = "0.1.1"
-description = "Asynchronous driver for the QMI8658 IMU sensor"
+description = "Async no_std driver for the QMI8658C 6-axis IMU (accelerometer + gyroscope) built on embedded-hal-async"
 authors = ["Steven Giacomelli <steve@giacomelli.ca>"]
 edition = "2024"
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/photon-circus/ph-qmi8658-imu"
+documentation = "https://docs.rs/ph-qmi8658"
+homepage = "https://github.com/photon-circus/ph-qmi8658-imu"
 keywords = ["imu", "qmi8658", "embedded", "accelerometer", "gyroscope"]
 categories = ["embedded", "no-std", "hardware-support"]
 publish = true
@@ -28,3 +30,7 @@ fixed = ["dep:fixed"]
 
 [dev-dependencies]
 futures = { version = "0.3", default-features = false, features = ["std", "executor"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
