@@ -1,6 +1,7 @@
 //! Sensor data readout helpers.
 
 pub(crate) mod fifo;
+pub(crate) mod scale;
 #[cfg(feature = "fixed")]
 pub(crate) mod fixed;
 
@@ -8,6 +9,15 @@ pub(crate) use fifo::fifo_read_len;
 pub use fifo::{
     FifoConfig, FifoFrame, FifoFrameFormat, FifoFrameIterator, FifoMode, FifoReadout, FifoSize,
     FifoStatus,
+};
+pub use scale::{
+    ScaleFactor,
+    accel_lsb_per_g,
+    accel_mg_per_lsb,
+    gyro_lsb_per_dps,
+    gyro_mdps_per_lsb,
+    temperature_lsb_per_celsius,
+    temperature_mdegc_per_lsb,
 };
 
 use crate::register::Register;

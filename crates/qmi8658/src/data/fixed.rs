@@ -1,6 +1,7 @@
 //! Fixed-point conversion helpers.
 
 use super::{AccelRaw, GyroRaw, Sample, TemperatureRaw};
+use super::scale::{accel_lsb_per_g, gyro_lsb_per_dps, temperature_lsb_per_celsius};
 use crate::config::common::{AccelRange, GyroRange};
 
 /// Fixed-point number type used for sensor conversions (I32F32).
@@ -35,30 +36,6 @@ pub struct TemperatureFixed {
     pub celsius: Fixed,
 }
 
-/// Returns the accelerometer sensitivity in LSB/g.
-pub const fn accel_lsb_per_g(range: AccelRange) -> i32 {
-    match range {
-        AccelRange::G2 => 16_384,
-        AccelRange::G4 => 8_192,
-        AccelRange::G8 => 4_096,
-        AccelRange::G16 => 2_048,
-    }
-}
-
-/// Returns the gyroscope sensitivity in LSB/dps.
-pub const fn gyro_lsb_per_dps(range: GyroRange) -> i32 {
-    match range {
-        GyroRange::Dps16 => 2_048,
-        GyroRange::Dps32 => 1_024,
-        GyroRange::Dps64 => 512,
-        GyroRange::Dps128 => 256,
-        GyroRange::Dps256 => 128,
-        GyroRange::Dps512 => 64,
-        GyroRange::Dps1024 => 32,
-        GyroRange::Dps2048 => 16,
-    }
-}
-
 /// Converts accelerometer raw counts to g.
 pub fn accel_to_g(raw: AccelRaw, range: AccelRange) -> AccelFixed {
     let scale = Fixed::from_num(accel_lsb_per_g(range));
@@ -83,7 +60,7 @@ pub fn gyro_to_dps(raw: GyroRaw, range: GyroRange) -> GyroFixed {
 ///
 /// The datasheet specifies 1 LSB = 1/256 deg C.
 pub fn temperature_celsius(raw: TemperatureRaw) -> TemperatureFixed {
-    let scale = Fixed::from_num(256);
+    let scale = Fixed::from_num(temperature_lsb_per_celsius());
     TemperatureFixed {
         celsius: Fixed::from_num(raw.value) / scale,
     }

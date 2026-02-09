@@ -1,6 +1,6 @@
 [package]
 name = "ph-qmi8658"
-version = "0.1.0"
+version = "0.1.1"
 description = "Asynchronous driver for the QMI8658 IMU sensor"
 authors = ["Steven Giacomelli <steve@giacomelli.ca>"]
 edition = "2024"
@@ -11,6 +11,10 @@ keywords = ["imu", "qmi8658", "embedded", "accelerometer", "gyroscope"]
 categories = ["embedded", "no-std", "hardware-support"]
 publish = true
 rust-version = "1.92.0"
+exclude = [
+    "ARCHITECTURE.md",
+    "RELEASE_CHECKLIST.md",
+]
 
 [dependencies]
 embedded-hal-async = { version = "1.0.0", default-features = false }
