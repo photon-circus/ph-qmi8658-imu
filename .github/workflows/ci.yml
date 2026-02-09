@@ -29,6 +29,8 @@ jobs:
           version: "latest"
           ldproxy: true
           buildtargets: "esp32,esp32s2,esp32s3"
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
       - name: Build xtensa targets
         run: |
           cargo +esp build -p ph-qmi8658 --target xtensa-esp32-none-elf -Zbuild-std=core
@@ -55,6 +57,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
       - name: Build
         run: cargo build -p ph-qmi8658 --target ${{ matrix.target }}
 

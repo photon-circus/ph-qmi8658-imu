@@ -1,5 +1,7 @@
 # QMI8658 IMU Driver
 
+[![Crates.io](https://img.shields.io/crates/v/ph-esp32-mac.svg)](https://crates.io/crates/ph-esp32-mac)
+[![Docs.rs](https://docs.rs/ph-esp32-mac/badge.svg)](https://docs.rs/ph-esp32-mac)
 [![CI](https://github.com/photon-circus/ph-qmi8658-imu/actions/workflows/ci.yml/badge.svg)](https://github.com/photon-circus/ph-qmi8658-imu/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Asynchronous driver for the QMI8658 6-axis IMU sensor, plus ESP32-S3 example applications.
@@ -13,6 +15,7 @@ Asynchronous driver for the QMI8658 6-axis IMU sensor, plus ESP32-S3 example app
 - Driver README: `crates/qmi8658/README.md`
 - Driver Architecture: `crates/qmi8658/ARCHITECTURE.md`
 - Release Checklist: `crates/qmi8658/RELEASE_CHECKLIST.md`
+- IMU Example README: `apps/imu-example/README.md`
 - Contributing: `CONTRIBUTING.md`
 - Security: `SECURITY.md`
 - Changelog: `CHANGELOG.md`

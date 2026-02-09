@@ -6,6 +6,15 @@
     holding buffers for the duration of a data transfer."
 )]
 #![deny(clippy::large_stack_frames)]
+//! FIFO-based motion feature example for the QMI8658 IMU.
+//!
+//! This app targets the ESP32-S3 Matrix Board and demonstrates:
+//! - Robust IMU initialization with retry on `Error::NotReady`.
+//! - FIFO burst reads for efficient sensor capture.
+//! - Lightweight motion features (RMS, peak, and activity percentage).
+//!
+//! The flow is intentionally linear and verbose to serve as a reference
+//! for integrating the driver in other embedded apps.
 
 use defmt::{error, info, warn};
 use embassy_executor::Spawner;
@@ -46,14 +55,23 @@ defmt::timestamp!("{=u64:ms}", 0u64);
 #[used]
 static APP_DESC_REF: &esp_bootloader_esp_idf::EspAppDesc = &ESP_APP_DESC;
 
+/// Friendly hardware identifier for logs.
 const BOARD_NAME: &str = "ESP32-S3 Matrix Board";
 
-const FIFO_BUFFER_LEN: usize = 192; // 16 frames * 12 bytes (accel+gyro)
+/// FIFO buffer sized for 16 frames: 12 bytes per frame (accel + gyro).
+const FIFO_BUFFER_LEN: usize = 192;
+/// FIFO watermark for stream reads.
 const FIFO_WATERMARK: u8 = 8;
+/// Delay between FIFO polling attempts when no data is ready.
 const FIFO_POLL_DELAY_MS: u64 = 10;
+/// Delay between init retries when the IMU reports `NotReady`.
 const INIT_RETRY_DELAY_MS: u64 = 100;
+/// Small settle time after switching modes or applying config.
 const MODE_SETTLE_DELAY_MS: u64 = 20;
 
+/// Retry helper for operations that can return `Error::NotReady`.
+///
+/// Any other error is surfaced immediately to the caller.
 macro_rules! retry_not_ready {
     ($label:literal, $delay_ms:expr, $body:expr) => {{
         loop {
@@ -69,6 +87,7 @@ macro_rules! retry_not_ready {
     }};
 }
 
+/// Activity thresholds used to estimate motion percentage.
 const ACCEL_MOTION_THRESHOLD_MG: i64 = 300;
 const GYRO_MOTION_THRESHOLD_MDPS: i64 = 50_000;
 
@@ -89,6 +108,7 @@ impl MotionStats {
         *self = Self::default();
     }
 
+    /// Accumulate raw FIFO frames into statistics using configured ranges.
     fn push(
         &mut self,
         frame: ph_qmi8658::FifoFrame,
@@ -131,16 +151,19 @@ impl MotionStats {
     }
 }
 
+/// Convert raw accelerometer reading to milli-g (mg).
 fn accel_raw_to_mg(raw: i16, range: AccelRange) -> i64 {
     let range_g = i64::from(range.g());
     (i64::from(raw) * range_g * 1000) / 32768
 }
 
+/// Convert raw gyro reading to milli-degrees per second (mdps).
 fn gyro_raw_to_mdps(raw: i16, range: GyroRange) -> i64 {
     let range_dps = i64::from(range.dps());
     (i64::from(raw) * range_dps * 1000) / 32768
 }
 
+/// Return squared magnitude for motion thresholding and RMS calculations.
 fn mag_sq_i64(x: i64, y: i64, z: i64) -> u64 {
     let x2 = x.saturating_mul(x) as u64;
     let y2 = y.saturating_mul(y) as u64;
@@ -148,6 +171,7 @@ fn mag_sq_i64(x: i64, y: i64, z: i64) -> u64 {
     x2.saturating_add(y2).saturating_add(z2)
 }
 
+/// Integer square root for RMS and peak magnitude computation.
 fn isqrt_u64(value: u64) -> u64 {
     if value == 0 {
         return 0;
@@ -161,6 +185,7 @@ fn isqrt_u64(value: u64) -> u64 {
     x
 }
 
+/// Compute RMS magnitude from a sum of squared magnitudes.
 fn rms_from_sum(sum: u64, samples: u32) -> u64 {
     if samples == 0 {
         0
@@ -174,6 +199,7 @@ async fn configure_imu(
     delay: &mut Delay,
     desired_config: Config,
 ) -> Result<u8, ImuError> {
+    // Apply the standard init sequence with interrupt config and desired modes.
     let irq = InterruptConfig::new().with_ctrl9_handshake_statusint(true);
     let address = retry_not_ready!(
         "IMU init",
@@ -190,8 +216,10 @@ async fn configure_imu(
         )
     )?;
 
+    // Allow time for mode/config to settle before FIFO operations.
     Timer::after(Duration::from_millis(MODE_SETTLE_DELAY_MS)).await;
 
+    // Configure FIFO streaming and reset to a clean state.
     let fifo = FifoConfig::new(FifoMode::Stream, FifoSize::Samples64, FIFO_WATERMARK);
     imu.apply_fifo_config(fifo).await?;
     retry_not_ready!(
@@ -205,15 +233,18 @@ async fn configure_imu(
 
 #[esp_rtos::main]
 async fn main(_spawner: Spawner) -> ! {
+    // Bring up clocks and timers early so delays are reliable.
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
 
+    // Configure interrupt pins from the IMU.
     let int1 = Input::new(peripherals.GPIO10, InputConfig::default().with_pull(Pull::Up));
     let int2 = Input::new(peripherals.GPIO13, InputConfig::default().with_pull(Pull::Up));
 
+    // I2C at 400 kHz for fast FIFO reads.
     let i2c_config = I2cConfig::default().with_frequency(Rate::from_khz(400));
     let i2c = I2c::new(peripherals.I2C0, i2c_config)
         .unwrap()
@@ -221,17 +252,20 @@ async fn main(_spawner: Spawner) -> ! {
         .with_scl(peripherals.GPIO12)
         .into_async();
 
+    // Target operating configuration for the example.
     let desired_accel = AccelConfig::new(AccelRange::G4, AccelOutputDataRate::Hz250);
     let desired_gyro = GyroConfig::new(GyroRange::Dps256, GyroOutputDataRate::Hz250);
     let desired_config = Config::new()
         .with_accel_config(desired_accel)
         .with_gyro_config(desired_gyro);
 
+    // Instantiate the driver with the selected I2C address and interrupt pins.
     let i2c_config = ph_qmi8658::I2cConfig::new(Qmi8658Address::Primary.addr());
     let mut imu =
         Qmi8658I2c::with_i2c_config(i2c, Some(int1), Some(int2), Config::new(), i2c_config);
 
     let mut delay = Delay;
+    // Retry init until the device is ready. Other errors are treated as fatal.
     let address = loop {
         match configure_imu(&mut imu, &mut delay, desired_config).await {
             Ok(address) => break address,
@@ -252,12 +286,14 @@ async fn main(_spawner: Spawner) -> ! {
     let accel_range = AccelRange::G4;
     let gyro_range = GyroRange::Dps256;
 
+    // FIFO buffer and stats accumulator for motion features.
     let mut buffer = [0u8; FIFO_BUFFER_LEN];
     let mut stats = MotionStats::default();
 
     info!("FIFO motion example running ({})", BOARD_NAME);
 
     loop {
+        // Read a FIFO burst. NotReady is a normal condition when no samples are queued.
         let readout = match imu.read_fifo_burst(&mut delay, &mut buffer).await {
             Ok(readout) => readout,
             Err(ImuError::NotReady) => {
@@ -271,6 +307,7 @@ async fn main(_spawner: Spawner) -> ! {
             }
         };
 
+        // No bytes means FIFO watermark not reached.
         if readout.bytes_read == 0 {
             Timer::after(Duration::from_millis(FIFO_POLL_DELAY_MS)).await;
             continue;
@@ -286,6 +323,7 @@ async fn main(_spawner: Spawner) -> ! {
             stats.push(frame, accel_range, gyro_range);
         }
 
+        // Report aggregate stats and reset per-burst.
         if stats.accel_samples > 0 || stats.gyro_samples > 0 {
             let accel_rms = rms_from_sum(stats.accel_mag_sq_sum, stats.accel_samples);
             let accel_peak = isqrt_u64(stats.accel_mag_sq_peak);
