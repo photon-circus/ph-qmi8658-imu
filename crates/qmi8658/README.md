@@ -192,3 +192,10 @@ Notes:
 **Features**
 - `defmt`: defmt formatting support
 - `fixed`: fixed-point conversions for raw data
+
+**Testing Notes**
+- The driver has unit test coverage across config validation, data decoding, FIFO parsing,
+  and interrupt/status decoding.
+- Gaps remain in end-to-end validation and transport-layer behavior; hardware integration
+  relies on `apps/qa-runner`.
+- Expanding unit test coverage is not in the current scope of this release plan.

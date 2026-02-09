@@ -31,9 +31,9 @@ jobs:
           buildtargets: "esp32,esp32s2,esp32s3"
       - name: Build xtensa targets
         run: |
-          cargo build -p ph-qmi8658 --target xtensa-esp32-none-elf
-          cargo build -p ph-qmi8658 --target xtensa-esp32s2-none-elf
-          cargo build -p ph-qmi8658 --target xtensa-esp32s3-none-elf
+          cargo +esp build -p ph-qmi8658 --target xtensa-esp32-none-elf -Zbuild-std=core
+          cargo +esp build -p ph-qmi8658 --target xtensa-esp32s2-none-elf -Zbuild-std=core
+          cargo +esp build -p ph-qmi8658 --target xtensa-esp32s3-none-elf -Zbuild-std=core
 
   build-cross:
     runs-on: ubuntu-latest
