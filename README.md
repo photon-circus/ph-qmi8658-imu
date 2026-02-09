@@ -1,5 +1,7 @@
 # QMI8658 IMU Driver
 
+[![CI](https://github.com/photon-circus/ph-qmi8658-imu/actions/workflows/ci.yml/badge.svg)](https://github.com/photon-circus/ph-qmi8658-imu/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Asynchronous driver for the QMI8658 6-axis IMU sensor, plus ESP32-S3 example applications.
 
 ## Repository Layout
@@ -7,9 +9,14 @@ Asynchronous driver for the QMI8658 6-axis IMU sensor, plus ESP32-S3 example app
 - `apps/qa-runner`: hardware test runner for the ESP32-S3 Matrix Board
 - `apps/imu-example`: FIFO-based example app for the ESP32-S3 Matrix Board
 
-## Documentation
+## Project Docs
 - Driver README: `crates/qmi8658/README.md`
 - Driver Architecture: `crates/qmi8658/ARCHITECTURE.md`
+- Release Checklist: `crates/qmi8658/RELEASE_CHECKLIST.md`
+- Contributing: `CONTRIBUTING.md`
+- Security: `SECURITY.md`
+- Changelog: `CHANGELOG.md`
+- Code of Conduct: `CODE_OF_CONDUCT.md`
 
 ## Quick Start (Driver)
 ```rust

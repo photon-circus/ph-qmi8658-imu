@@ -35,6 +35,15 @@ The apps are configured for ESP32-S3 using `espflash`.
 espflash flash --monitor --log-format defmt
 ```
 
+## Documentation
+- Driver overview and flows: `crates/qmi8658/README.md`
+- Driver architecture: `crates/qmi8658/ARCHITECTURE.md`
+- Release checklist: `crates/qmi8658/RELEASE_CHECKLIST.md`
+- Project policies: `SECURITY.md`, `CHANGELOG.md`, `CODE_OF_CONDUCT.md`
+
+If you change driver behavior or flow sequencing, update both
+`crates/qmi8658/README.md` and `crates/qmi8658/ARCHITECTURE.md`.
+
 ## Code Style
 - Follow existing style and naming conventions.
 - Keep changes focused and include tests where possible.

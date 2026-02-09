@@ -1,4 +1,7 @@
-# ph-qmi8658 Driver
+ph-qmi8658 Driver
+=================
+
+[![Crates.io](https://img.shields.io/crates/v/ph-qmi8658.svg)](https://crates.io/crates/ph-qmi8658) [![Docs.rs](https://docs.rs/ph-qmi8658/badge.svg)](https://docs.rs/ph-qmi8658) [![CI](https://github.com/photon-circus/ph-qmi8658-imu/actions/workflows/ci.yml/badge.svg)](https://github.com/photon-circus/ph-qmi8658-imu/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
 Async driver for the QMI8658 6-axis IMU sensor built on `embedded-hal-async`.
 
@@ -41,6 +44,8 @@ let address = imu.init_with_addresses(
 ).await?;
 let _ = address;
 ```
+Initialization notes:
+- If `init` or `init_with_addresses` returns `Error::NotReady`, delay briefly and retry.
 
 **Initialization Macro**
 ```rust
@@ -199,3 +204,6 @@ Notes:
 - Gaps remain in end-to-end validation and transport-layer behavior; hardware integration
   relies on `apps/qa-runner`.
 - Expanding unit test coverage is not in the current scope of this release plan.
+
+**Release Checklist**
+See `RELEASE_CHECKLIST.md` in this directory.

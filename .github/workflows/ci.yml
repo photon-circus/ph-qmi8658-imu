@@ -66,3 +66,16 @@ jobs:
         with:
           command: check
           manifest-path: crates/qmi8658/Cargo.toml
+
+  doc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (docs)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - name: Build docs
+        run: cargo doc --manifest-path Cargo.toml --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings

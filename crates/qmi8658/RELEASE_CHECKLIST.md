@@ -2,7 +2,8 @@
 
 ## Preflight
 - Confirm `version` and `rust-version` in `crates/qmi8658/Cargo.toml`.
-- Verify `README.md`, `ARCHITECTURE.md`, `SECURITY.md`, and `CHANGELOG.md` are up to date.
+- Verify `crates/qmi8658/README.md`, `crates/qmi8658/ARCHITECTURE.md`, `SECURITY.md`,
+  and `CHANGELOG.md` are up to date.
 - Ensure docs/examples use `ph_qmi8658`.
 
 ## Build & Test
@@ -11,7 +12,7 @@
 - `cargo doc -p ph-qmi8658`
 - `cargo test -p ph-qmi8658`
 
-## Target Matrix (CLI Builds)
+## Target Matrix (CI Builds)
 ESP32 (xtensa):
 - `xtensa-esp32-none-elf`
 - `xtensa-esp32s2-none-elf`
