@@ -160,8 +160,17 @@ pub mod ctrl1 {
     pub const ADDR_AI: u8 = 0b0100_0000;
     /// Big-endian serial interface read data.
     pub const BE: u8 = 0b0010_0000;
+    /// 0: INT2 pin is high-Z mode
+    /// 1: INT2 pin output is enabled
+    pub const INT2_EN: u8 = 0b0001_0000;
+    /// 0: INT1 pin is high-Z mode
+    /// 1: INT1 pin output is enabled
+    pub const INT1_EN: u8 = 0b0000_1000;
+    /// 0: FIFO interrupt is mapped to INT2 pin
+    /// 1: FIFO interrupt is mapped to INT1 pin
+    pub const FIFO_INT_SEL: u8 = 0b0000_0100;
     /// Reserved bits.
-    pub const RESERVED_MASK: u8 = 0b0001_1110;
+    pub const RESERVED_MASK: u8 = 0b0000_0010;
     /// Disable the internal 2 MHz oscillator (power-down).
     pub const SENSOR_DISABLE: u8 = 0b0000_0001;
 }

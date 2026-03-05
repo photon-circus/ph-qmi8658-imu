@@ -791,7 +791,6 @@ impl<I2C> DeviceCore<I2cInterface<I2C>> {
         self.interface.set_address(address);
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -805,7 +804,7 @@ mod tests {
     fn apply_config_writes_ctrls_in_order() {
         let interface = MockInterface::default();
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, true, false);
+        let settings = InterfaceSettings::new(true, true, false, true, true, true);
         let mut core = DeviceCore::new(interface, config, settings);
 
         block_on(core.apply_config()).expect("apply config");
@@ -827,7 +826,7 @@ mod tests {
         let interface =
             MockInterface::default().with_reg(Register::StatusInt.addr(), status_int::CMD_DONE);
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, true, false);
+        let settings = InterfaceSettings::new(true, true, false, true, true, true);
         let mut core = DeviceCore::new(interface, config, settings);
         core.ctrl9_handshake_statusint = true;
 
@@ -855,7 +854,7 @@ mod tests {
         interface.set_reg(fifo_base.wrapping_add(5), 0x00);
 
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, false, false);
+        let settings = InterfaceSettings::new(true, false, false, true, true, true);
         let mut core = DeviceCore::new(interface, config, settings);
 
         let mut delay = MockDelay::default();

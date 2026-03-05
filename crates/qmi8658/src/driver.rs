@@ -722,7 +722,7 @@ mod tests {
     fn apply_fifo_config_writes_fifo_registers() {
         let interface = MockInterface::default();
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, true, false);
+        let settings = InterfaceSettings::new(true, true, false, true, true, true);
         let core = DeviceCore::new(interface, config, settings);
         let mut driver: Qmi8658<MockInterface, (), ()> = Qmi8658 {
             core,
@@ -744,7 +744,7 @@ mod tests {
     fn apply_interrupt_config_writes_ctrl8() {
         let interface = MockInterface::default();
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, true, false);
+        let settings = InterfaceSettings::new(true, true, false, true, true, true);
         let core = DeviceCore::new(interface, config, settings);
         let mut driver: Qmi8658<MockInterface, (), ()> = Qmi8658 {
             core,
