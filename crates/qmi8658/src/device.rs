@@ -398,29 +398,37 @@ where
 
     /// Waits for CTRL9 command completion by polling the CmdDone bit.
     pub(crate) async fn wait_ctrl9_done<D: DelayNs>(&mut self, delay: &mut D) -> Result<(), Error> {
-        const POLL_RETRIES: u8 = 10;
+        const POLL_RETRIES: u8 = 20;
         const POLL_DELAY_NS: u32 = 1_000_000;
 
         for _ in 0..POLL_RETRIES {
+            // NOTE: Per datasheet, CTRL9 command completion can be notified via INT1 (with CTRL8.bit7=0).
+            // While INT1 interrupt callback is theoretically more efficient than polling,
+            // we retain the polling implementation for practicality and code simplicity.
             if self.ctrl9_handshake_statusint {
                 let status = self.read_reg(Register::StatusInt).await?;
                 if (status & status_int::CMD_DONE) != 0 {
+                    self.write_reg(Register::Ctrl9, 0x00).await?;
                     return Ok(());
                 }
             } else {
                 let status1 = self.read_reg(Register::Status1).await?;
                 if (status1 & crate::register::status1::CMD_DONE) != 0 {
+                    self.write_reg(Register::Ctrl9, 0x00).await?;
                     return Ok(());
                 }
                 // Some revisions still surface CmdDone in STATUSINT even when INT1 is used.
                 let status = self.read_reg(Register::StatusInt).await?;
                 if (status & status_int::CMD_DONE) != 0 {
+                    self.write_reg(Register::Ctrl9, 0x00).await?;
                     return Ok(());
                 }
             }
             delay.delay_ns(POLL_DELAY_NS).await;
         }
 
+        // Don’t write to CTRL9 register, allow user to retry the operation.
+        // self.write_reg(Register::Ctrl9, 0x00).await?;
         Err(Error::NotReady)
     }
 
