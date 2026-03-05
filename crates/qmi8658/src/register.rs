@@ -243,9 +243,16 @@ pub mod ctrl7 {
     pub const SYNC_SMPL: u8 = 0b1000_0000;
     /// High-speed internal clock.
     pub const SYS_HS: u8 = 0b0100_0000;
-    /// Reserved bit.
-    pub const RESERVED_5: u8 = 0b0010_0000;
-    /// Gyroscope snooze mode.
+     /// DRDY (Data Ready) signal disable control
+    /// Bit5, Default: 0 (DRDY enabled, routed to INT2 pin)
+    /// - 0: DRDY signal enabled, output to INT2 pin (will generate periodic pulse at ODR frequency)
+    /// - 1: DRDY signal disabled, blocked from INT2 pin (fixes periodic level toggle on INT2)
+    pub const DRDY_DIS: u8 = 0b0010_0000;
+    /// Gyroscope snooze mode control
+    /// Bit4, Default: 0 (full gyro mode)
+    /// Only effective when G_EN = 1 (gyroscope enabled)
+    /// - 0: Gyroscope full mode (drive & sense enabled, normal data output)
+    /// - 1: Gyroscope snooze mode (only drive enabled, no data output, faster wake-up than full disable)
     pub const G_SN: u8 = 0b0001_0000;
     /// Enable AttitudeEngine.
     pub const S_EN: u8 = 0b0000_1000;
