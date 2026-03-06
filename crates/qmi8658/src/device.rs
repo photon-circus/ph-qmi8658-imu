@@ -12,10 +12,10 @@ use crate::error::Error;
 use crate::interface::I2cInterface;
 use crate::interface::{Interface, InterfaceSettings};
 use crate::interrupt::{InterruptConfig, InterruptStatus};
+use crate::pull::PullUpConfig;
 use crate::register::{Register, ctrl7, ctrl9, fifo_ctrl, reset, status_int, who_am_i};
 use crate::self_test::SelfTestAxis;
 use crate::wom::WomConfig;
-use crate::pull::PullUpConfig;
 
 pub(crate) struct DeviceCore<I> {
     interface: I,
@@ -66,11 +66,23 @@ where
 
     pub(crate) async fn soft_reset<D: DelayNs>(&mut self, delay: &mut D) -> Result<(), Error> {
         self.write_reg(Register::Reset, reset::SOFT_RESET).await?;
-        delay.delay_ns(150_000_000).await;
-        self.mode = OperatingModeStateMachine::new(OperatingMode::PowerOnDefault);
-        Ok(())
-    }
 
+        const POLL_RETRIES: u8 = 20;
+        const POLL_DELAY_NS: u32 = 10_000_000;
+
+        for _ in 0..POLL_RETRIES {
+            let status = self.read_reg(unsafe { core::mem::transmute(0x4Du8) }).await?;
+
+            if status == 0x80 {
+                self.mode = OperatingModeStateMachine::new(OperatingMode::PowerOnDefault);
+                return Ok(());
+            }
+            delay.delay_ns(POLL_DELAY_NS).await;
+        }
+
+        Err(Error::ResetFailed) 
+    }
+    
     pub(crate) async fn verify_device(&mut self) -> Result<(), Error> {
         let who = self.read_reg(Register::WhoAmI).await?;
         if who != who_am_i::EXPECTED {
