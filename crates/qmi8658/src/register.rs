@@ -160,8 +160,17 @@ pub mod ctrl1 {
     pub const ADDR_AI: u8 = 0b0100_0000;
     /// Big-endian serial interface read data.
     pub const BE: u8 = 0b0010_0000;
+    /// 0: INT2 pin is high-Z mode
+    /// 1: INT2 pin output is enabled
+    pub const INT2_EN: u8 = 0b0001_0000;
+    /// 0: INT1 pin is high-Z mode
+    /// 1: INT1 pin output is enabled
+    pub const INT1_EN: u8 = 0b0000_1000;
+    /// 0: FIFO interrupt is mapped to INT2 pin
+    /// 1: FIFO interrupt is mapped to INT1 pin
+    pub const FIFO_INT_SEL: u8 = 0b0000_0100;
     /// Reserved bits.
-    pub const RESERVED_MASK: u8 = 0b0001_1110;
+    pub const RESERVED_MASK: u8 = 0b0000_0010;
     /// Disable the internal 2 MHz oscillator (power-down).
     pub const SENSOR_DISABLE: u8 = 0b0000_0001;
 }
@@ -234,9 +243,16 @@ pub mod ctrl7 {
     pub const SYNC_SMPL: u8 = 0b1000_0000;
     /// High-speed internal clock.
     pub const SYS_HS: u8 = 0b0100_0000;
-    /// Reserved bit.
-    pub const RESERVED_5: u8 = 0b0010_0000;
-    /// Gyroscope snooze mode.
+     /// DRDY (Data Ready) signal disable control
+    /// Bit5, Default: 0 (DRDY enabled, routed to INT2 pin)
+    /// - 0: DRDY signal enabled, output to INT2 pin (will generate periodic pulse at ODR frequency)
+    /// - 1: DRDY signal disabled, blocked from INT2 pin (fixes periodic level toggle on INT2)
+    pub const DRDY_DIS: u8 = 0b0010_0000;
+    /// Gyroscope snooze mode control
+    /// Bit4, Default: 0 (full gyro mode)
+    /// Only effective when G_EN = 1 (gyroscope enabled)
+    /// - 0: Gyroscope full mode (drive & sense enabled, normal data output)
+    /// - 1: Gyroscope snooze mode (only drive enabled, no data output, faster wake-up than full disable)
     pub const G_SN: u8 = 0b0001_0000;
     /// Enable AttitudeEngine.
     pub const S_EN: u8 = 0b0000_1000;

@@ -12,6 +12,7 @@ use crate::error::Error;
 use crate::interface::I2cInterface;
 use crate::interface::{Interface, InterfaceSettings};
 use crate::interrupt::{InterruptConfig, InterruptStatus};
+use crate::pull::PullUpConfig;
 use crate::register::{Register, ctrl7, ctrl9, fifo_ctrl, reset, status_int, who_am_i};
 use crate::self_test::SelfTestAxis;
 use crate::wom::WomConfig;
@@ -65,11 +66,23 @@ where
 
     pub(crate) async fn soft_reset<D: DelayNs>(&mut self, delay: &mut D) -> Result<(), Error> {
         self.write_reg(Register::Reset, reset::SOFT_RESET).await?;
-        delay.delay_ns(150_000_000).await;
-        self.mode = OperatingModeStateMachine::new(OperatingMode::PowerOnDefault);
-        Ok(())
-    }
 
+        const POLL_RETRIES: u8 = 20;
+        const POLL_DELAY_NS: u32 = 10_000_000;
+
+        for _ in 0..POLL_RETRIES {
+            let status = self.read_reg(unsafe { core::mem::transmute(0x4Du8) }).await?;
+
+            if status == 0x80 {
+                self.mode = OperatingModeStateMachine::new(OperatingMode::PowerOnDefault);
+                return Ok(());
+            }
+            delay.delay_ns(POLL_DELAY_NS).await;
+        }
+
+        Err(Error::ResetFailed) 
+    }
+    
     pub(crate) async fn verify_device(&mut self) -> Result<(), Error> {
         let who = self.read_reg(Register::WhoAmI).await?;
         if who != who_am_i::EXPECTED {
@@ -96,6 +109,23 @@ where
         self.write_reg(Register::Ctrl7, ctrl7_value).await?;
         self.mode.set_mode(self.config.target_mode());
         Ok(())
+    }
+
+    /// Applies Pull-up resistor configuration (CAL1_L + CTRL9 command).
+    pub(crate) async fn apply_pull_up_config(&mut self, config: PullUpConfig) -> Result<(), Error> {
+        self.write_reg(Register::Cal1L, config.cal1_l()).await?;
+        self.write_reg(Register::Cal1L, config.cal1_h()).await?;
+        self.write_reg(Register::Ctrl9, config.ctrl9_cmd()).await
+    }
+
+    /// Applies Pull-up configuration and waits for CTRL9 command completion.
+    pub(crate) async fn apply_pull_up_config_with_delay<D: DelayNs>(
+        &mut self,
+        delay: &mut D,
+        config: PullUpConfig,
+    ) -> Result<(), Error> {
+        self.apply_pull_up_config(config).await?;
+        self.wait_ctrl9_done(delay).await
     }
 
     pub(crate) const fn sync_sample_enabled(&self) -> bool {
@@ -398,29 +428,37 @@ where
 
     /// Waits for CTRL9 command completion by polling the CmdDone bit.
     pub(crate) async fn wait_ctrl9_done<D: DelayNs>(&mut self, delay: &mut D) -> Result<(), Error> {
-        const POLL_RETRIES: u8 = 10;
+        const POLL_RETRIES: u8 = 100;
         const POLL_DELAY_NS: u32 = 1_000_000;
 
         for _ in 0..POLL_RETRIES {
+            // NOTE: Per datasheet, CTRL9 command completion can be notified via INT1 (with CTRL8.bit7=0).
+            // While INT1 interrupt callback is theoretically more efficient than polling,
+            // we retain the polling implementation for practicality and code simplicity.
             if self.ctrl9_handshake_statusint {
                 let status = self.read_reg(Register::StatusInt).await?;
                 if (status & status_int::CMD_DONE) != 0 {
+                    self.write_reg(Register::Ctrl9, 0x00).await?;
                     return Ok(());
                 }
             } else {
                 let status1 = self.read_reg(Register::Status1).await?;
                 if (status1 & crate::register::status1::CMD_DONE) != 0 {
+                    self.write_reg(Register::Ctrl9, 0x00).await?;
                     return Ok(());
                 }
                 // Some revisions still surface CmdDone in STATUSINT even when INT1 is used.
                 let status = self.read_reg(Register::StatusInt).await?;
                 if (status & status_int::CMD_DONE) != 0 {
+                    self.write_reg(Register::Ctrl9, 0x00).await?;
                     return Ok(());
                 }
             }
             delay.delay_ns(POLL_DELAY_NS).await;
         }
 
+        // Don’t write to CTRL9 register, allow user to retry the operation.
+        // self.write_reg(Register::Ctrl9, 0x00).await?;
         Err(Error::NotReady)
     }
 
@@ -717,6 +755,7 @@ where
         }
     }
 
+    #[inline]
     fn nanos_from_ratio(numerator: u64, denominator: u32) -> u32 {
         if denominator == 0 {
             return 0;
@@ -729,14 +768,17 @@ where
         }
     }
 
+    #[inline]
     fn t5_ns_from_odr_milli(odr_milli: u32) -> u32 {
         Self::nanos_from_ratio(3_000_000_000_000u64, odr_milli)
     }
 
-    fn t6_ns_from_odr_milli(odr_milli: u32) -> u32 {
+    #[inline]
+    pub(crate) fn t6_ns_from_odr_milli(&self, odr_milli: u32) -> u32 {
         Self::nanos_from_ratio(2_000_000_000_000u64, odr_milli)
     }
 
+    #[inline]
     fn t1_plus_t5_ns(&self) -> Option<u32> {
         let t1_ns = 60_000_000u32;
         let t5_ns = self
@@ -746,6 +788,7 @@ where
         Some(t1_ns.saturating_add(t5_ns))
     }
 
+    #[inline]
     fn t2_plus_t5_ns(&self) -> Option<u32> {
         let t2_ns = 3_000_000u32;
         let t5_ns = self
@@ -755,6 +798,7 @@ where
         Some(t2_ns.saturating_add(t5_ns))
     }
 
+    #[inline]
     fn t3_plus_t5_ns(&self) -> Option<u32> {
         let t3_ns = 12_000_000u32;
         let t5_ns = self
@@ -764,6 +808,7 @@ where
         Some(t3_ns.saturating_add(t5_ns))
     }
 
+    #[inline]
     fn t4_plus_t5_ns(&self) -> Option<u32> {
         let t4_ns = 60_000_000u32;
         let t5_ns = self
@@ -773,6 +818,7 @@ where
         Some(t4_ns.saturating_add(t5_ns))
     }
 
+    #[inline]
     fn t6_ns(&self) -> Option<u32> {
         let accel = self.accel_odr_milli();
         let gyro = self.gyro_odr_milli();
@@ -782,7 +828,7 @@ where
             (None, Some(g)) => g,
             (None, None) => 0,
         };
-        Some(Self::t6_ns_from_odr_milli(odr_milli))
+        Some(self.t6_ns_from_odr_milli(odr_milli))
     }
 }
 
@@ -791,7 +837,6 @@ impl<I2C> DeviceCore<I2cInterface<I2C>> {
         self.interface.set_address(address);
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -805,7 +850,7 @@ mod tests {
     fn apply_config_writes_ctrls_in_order() {
         let interface = MockInterface::default();
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, true, false);
+        let settings = InterfaceSettings::new(true, true, false, true, true, true);
         let mut core = DeviceCore::new(interface, config, settings);
 
         block_on(core.apply_config()).expect("apply config");
@@ -827,7 +872,7 @@ mod tests {
         let interface =
             MockInterface::default().with_reg(Register::StatusInt.addr(), status_int::CMD_DONE);
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, true, false);
+        let settings = InterfaceSettings::new(true, true, false, true, true, true);
         let mut core = DeviceCore::new(interface, config, settings);
         core.ctrl9_handshake_statusint = true;
 
@@ -855,7 +900,7 @@ mod tests {
         interface.set_reg(fifo_base.wrapping_add(5), 0x00);
 
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, false, false);
+        let settings = InterfaceSettings::new(true, false, false, true, true, true);
         let mut core = DeviceCore::new(interface, config, settings);
 
         let mut delay = MockDelay::default();

@@ -137,9 +137,24 @@ impl Default for InterruptConfig {
 pub struct InterruptStatus {
     /// CTRL9 command done.
     pub cmd_done: bool,
-    /// Data locked flag.
+    /// Data lock flag | Real-time level mapping of INT1 pin
+    /// Corresponding to STATUSINT.bit1 (Locked), its functional meaning is completely different in SyncSample mode and Non-SyncSample mode
+    /// 【SyncSample Mode (CTRL7.bit7 = 1)】
+    /// - Asserted (true): The sensor sampling data has been locked to the shadow register, which can be read safely without data misalignment risk
+    /// - Cleared (false): No valid data is locked, or the lock has been released after reading the last data register
+    /// 【Non-SyncSample Mode (CTRL7.bit7 = 0, default/commonly used mode)】
+    /// - NO data lock related meaning, the value is completely equal to the real-time level of the INT1 pin
+    /// - true = INT1 pin is currently at high level; false = INT1 pin is currently at low level
     pub data_locked: bool,
-    /// Data available flag.
+    /// Data available flag | Real-time level mapping of INT2 pin
+    /// Corresponding to STATUSINT.bit0 (Avail), its functional meaning is completely different in SyncSample mode and Non-SyncSample mode
+    /// 【SyncSample Mode (CTRL7.bit7 = 1)】
+    /// - Asserted (true): New valid sampling data is available from the sensor, which can trigger the data locking process
+    /// - Cleared (false): No new data is updated since the last read
+    /// 【Non-SyncSample Mode (CTRL7.bit7 = 0, default/commonly used mode)】
+    /// - NO data ready related meaning, the value is completely equal to the real-time level of the INT2 pin
+    /// - true = INT2 pin is currently at high level; false = INT2 pin is currently at low level
+    /// Accelerometer data ready.
     pub data_available: bool,
     /// Accelerometer data ready.
     pub accel_ready: bool,

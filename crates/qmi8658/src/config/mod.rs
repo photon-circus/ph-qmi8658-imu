@@ -19,6 +19,8 @@ pub struct Config {
     pub accel: Option<AccelConfig>,
     /// Gyroscope configuration (range + output data rate). None disables the gyroscope.
     pub gyro: Option<GyroConfig>,
+    /// Enable the data-ready (DRDY) interrupt/output when true.
+    pub enable_drdy: bool,
 }
 
 impl Default for Config {
@@ -33,6 +35,7 @@ impl Config {
         Self {
             accel: Some(AccelConfig::DEFAULT),
             gyro: Some(GyroConfig::DEFAULT),
+            enable_drdy: false,
         }
     }
 
@@ -61,6 +64,24 @@ impl Config {
     #[must_use]
     pub const fn without_gyro(mut self) -> Self {
         self.gyro = None;
+        self
+    }
+
+    /// Enables or disables the Data-Ready (DRDY) signal.
+    /// - `enable = true`: DRDY signal is enabled.
+    ///   - In Non-SyncSample mode (CTRL7.bit7 = 0): Only effective when FIFO is in Bypass mode (FIFO_CTRL.FIFO_MODE = 00, FIFO disabled).
+    ///   - In SyncSample mode (CTRL7.bit7 = 1): DRDY is AUTOMATICALLY enabled regardless of this setting, forced to route to INT2 pin (FIFO function is disabled in this mode), and `CTRL7.bit5 (DRDY_DIS)` configuration is ignored.
+    /// - `enable = false`: DRDY signal is disabled, blocked from INT2 pin.
+    ///   - Effective only in Non-SyncSample mode; SyncSample mode forces DRDY enable and this setting is overridden.
+    /// DRDY pulses at the sensor's ODR (Output Data Rate) frequency, with rising edge indicating new data is available in the sensor data registers.
+    /// Key Notes:
+    /// 1. DRDY and FIFO are mutually exclusive (hardware-enforced mechanism):
+    ///    - FIFO enabled (FIFO_MODE = 01/10: FIFO/Stream mode) → DRDY is automatically disabled, regardless of this `enable` setting or FIFO interrupt pin mapping (INT1/INT2).
+    ///    - FIFO interrupt pin selection (CTRL1.FIFO_INT_SEL) only affects FIFO interrupt routing, not the DRDY-FIFO mutual exclusion.
+    /// 2. SyncSample mode specific behavior: DRDY is a mandatory companion signal for the locking mechanism (Locking Mechanism), ensuring data read consistency without misalignment
+    #[must_use]
+    pub const fn enable_drdy(mut self, enable: bool) -> Self {
+        self.enable_drdy = enable;
         self
     }
 
@@ -99,6 +120,9 @@ impl Config {
         {
             value |= ctrl5::A_LPF_EN;
             value |= (mode.bits() << ctrl5::A_LPF_MODE_SHIFT) & ctrl5::A_LPF_MODE_MASK;
+        }
+        if !self.enable_drdy {
+            value |= ctrl7::DRDY_DIS;
         }
         value
     }
