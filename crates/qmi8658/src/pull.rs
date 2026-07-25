@@ -30,6 +30,7 @@ pub struct PullUpConfig {
 
 /// Bit mapping for pull-up disable flags in the CAL1_L register.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
 pub enum PullUpDisableBits {
     /// Auxiliary group disable bit (bit 0).
