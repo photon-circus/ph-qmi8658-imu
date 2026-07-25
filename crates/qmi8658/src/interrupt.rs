@@ -154,7 +154,6 @@ pub struct InterruptStatus {
     /// 【Non-SyncSample Mode (CTRL7.bit7 = 0, default/commonly used mode)】
     /// - NO data ready related meaning, the value is completely equal to the real-time level of the INT2 pin
     /// - true = INT2 pin is currently at high level; false = INT2 pin is currently at low level
-    /// Accelerometer data ready.
     pub data_available: bool,
     /// Accelerometer data ready.
     pub accel_ready: bool,

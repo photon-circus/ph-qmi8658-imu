@@ -181,7 +181,7 @@ where
     }
 
     /// Applies the pull-up resistor configuration (CAL1_L + CTRL9 command).
-    pub async fn apply_pull_config(&mut self, config: PullUpConfig) -> Result<(), Error> {
+    pub async fn apply_pull_up_config(&mut self, config: PullUpConfig) -> Result<(), Error> {
         self.core.apply_pull_up_config(config).await
     }
 

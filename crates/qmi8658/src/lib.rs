@@ -166,7 +166,7 @@ pub use error::Error;
 pub use interrupt::{InterruptConfig, InterruptPin, InterruptStatus, InterruptWaitError};
 pub use self_test::{SelfTestAxis, SelfTestError, SelfTestReport};
 pub use wom::{WomConfig, WomInterruptLevel};
-pub use pull::{PullUpConfig, PullUpDisableBits};
+pub use pull::{PullUpConfig, PullUpDisableBits, PullUpGroup};
 
 // Fixed-point conversions (feature-gated)
 #[cfg(feature = "fixed")]

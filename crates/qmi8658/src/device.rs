@@ -71,9 +71,9 @@ where
         const POLL_DELAY_NS: u32 = 10_000_000;
 
         for _ in 0..POLL_RETRIES {
-            let status = self.interface.read_reg(0x4D).await?;
+            let status = self.interface.read_reg(reset::RESET_DONE_REG).await?;
 
-            if status == 0x80 {
+            if status == reset::RESET_DONE {
                 self.mode = OperatingModeStateMachine::new(OperatingMode::PowerOnDefault);
                 return Ok(());
             }
@@ -114,7 +114,7 @@ where
     /// Applies Pull-up resistor configuration (CAL1_L + CTRL9 command).
     pub(crate) async fn apply_pull_up_config(&mut self, config: PullUpConfig) -> Result<(), Error> {
         self.write_reg(Register::Cal1L, config.cal1_l()).await?;
-        self.write_reg(Register::Cal1L, config.cal1_h()).await?;
+        self.write_reg(Register::Cal1H, config.cal1_h()).await?;
         self.write_reg(Register::Ctrl9, config.ctrl9_cmd()).await
     }
 

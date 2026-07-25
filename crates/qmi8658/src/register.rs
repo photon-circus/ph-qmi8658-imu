@@ -450,4 +450,11 @@ pub mod ae_reg2 {
 pub mod reset {
     /// Soft reset command value.
     pub const SOFT_RESET: u8 = 0b1011_0000;
+    /// Register polled for reset completion (address `0x4D`).
+    ///
+    /// During a soft reset the device repurposes this address (otherwise
+    /// `DqYL`) to report reset status, as done in the vendor reference driver.
+    pub const RESET_DONE_REG: u8 = 0x4D;
+    /// Value read from [`RESET_DONE_REG`] once the soft reset has completed.
+    pub const RESET_DONE: u8 = 0x80;
 }
