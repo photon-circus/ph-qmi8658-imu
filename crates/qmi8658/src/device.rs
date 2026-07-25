@@ -73,7 +73,7 @@ where
         for _ in 0..POLL_RETRIES {
             let status = self.interface.read_reg(reset::RESET_DONE_REG).await?;
 
-            if status == reset::RESET_DONE {
+            if (status & reset::RESET_DONE) != 0 {
                 self.mode = OperatingModeStateMachine::new(OperatingMode::PowerOnDefault);
                 return Ok(());
             }
