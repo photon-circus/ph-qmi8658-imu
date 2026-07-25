@@ -71,7 +71,7 @@ where
         const POLL_DELAY_NS: u32 = 10_000_000;
 
         for _ in 0..POLL_RETRIES {
-            let status = self.read_reg(unsafe { core::mem::transmute(0x4Du8) }).await?;
+            let status = self.interface.read_reg(0x4D).await?;
 
             if status == 0x80 {
                 self.mode = OperatingModeStateMachine::new(OperatingMode::PowerOnDefault);
