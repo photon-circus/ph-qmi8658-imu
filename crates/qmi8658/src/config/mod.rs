@@ -35,7 +35,7 @@ impl Config {
         Self {
             accel: Some(AccelConfig::DEFAULT),
             gyro: Some(GyroConfig::DEFAULT),
-            enable_drdy: false,
+            enable_drdy: true,
         }
     }
 
