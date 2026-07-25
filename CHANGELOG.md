@@ -37,6 +37,9 @@ All notable changes to this project will be documented in this file.
   register behavior.
 - Aligned both ESP32-S3 applications with `defmt` 1.1.1 and refreshed their
   lockfiles so they build against the v0.1.2 driver.
+- Expanded CI architecture coverage to explicitly include the ESP32-C2/C3,
+  C5/C6/C61/H2, P4, RP2040, both RP2350/RP2354 CPU architectures, and common
+  STM32, Nordic, Microchip SAM, and NXP Cortex-M families.
 
 ### Documentation
 

@@ -47,6 +47,20 @@ jobs:
 
   build-xtensa:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - chip: esp32
+            buildtarget: esp32
+            target: xtensa-esp32-none-elf
+          - chip: esp32-s2
+            buildtarget: esp32s2
+            target: xtensa-esp32s2-none-elf
+          - chip: esp32-s3
+            buildtarget: esp32s3
+            target: xtensa-esp32s3-none-elf
+    name: build-xtensa (${{ matrix.chip }})
     steps:
       - uses: actions/checkout@v4
       - uses: esp-rs/xtensa-toolchain@v1.5
@@ -54,21 +68,19 @@ jobs:
           default: true
           version: "latest"
           ldproxy: true
-          buildtargets: "esp32,esp32s2,esp32s3"
+          buildtargets: ${{ matrix.buildtarget }}
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
-      - name: Build xtensa targets
-        run: |
-          cargo +esp build -p ph-qmi8658 --target xtensa-esp32-none-elf -Zbuild-std=core --features defmt,fixed
-          cargo +esp build -p ph-qmi8658 --target xtensa-esp32-none-elf -Zbuild-std=core --no-default-features --features qmi8658a,defmt,fixed
-          cargo +esp build -p ph-qmi8658 --target xtensa-esp32s2-none-elf -Zbuild-std=core --features defmt,fixed
-          cargo +esp build -p ph-qmi8658 --target xtensa-esp32s2-none-elf -Zbuild-std=core --no-default-features --features qmi8658a,defmt,fixed
-          cargo +esp build -p ph-qmi8658 --target xtensa-esp32s3-none-elf -Zbuild-std=core --features defmt,fixed
-          cargo +esp build -p ph-qmi8658 --target xtensa-esp32s3-none-elf -Zbuild-std=core --no-default-features --features qmi8658a,defmt,fixed
+      - name: Build QMI8658C
+        run: cargo +esp build -p ph-qmi8658 --target ${{ matrix.target }} -Zbuild-std=core --features defmt,fixed
+      - name: Build QMI8658A
+        run: cargo +esp build -p ph-qmi8658 --target ${{ matrix.target }} -Zbuild-std=core --no-default-features --features qmi8658a,defmt,fixed
       - name: Build hardware QA runner
+        if: matrix.chip == 'esp32-s3'
         working-directory: apps/qa-runner
         run: cargo +esp build
       - name: Build IMU example
+        if: matrix.chip == 'esp32-s3'
         working-directory: apps/imu-example
         run: cargo +esp build
 
@@ -77,31 +89,47 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - riscv32imc-unknown-none-elf
-          - riscv32imac-unknown-none-elf
-          - thumbv6m-none-eabi
-          - thumbv7m-none-eabi
-          - thumbv7em-none-eabi
-          - thumbv7em-none-eabihf
-          - thumbv8m.base-none-eabi
-          - thumbv8m.main-none-eabi
-          - thumbv8m.main-none-eabihf
+        # This driver is HAL/PAC-independent. Each row verifies the CPU/ABI
+        # target shared by the representative MCU families in its name.
+        platform:
+          - name: esp32-c2-c3
+            target: riscv32imc-unknown-none-elf
+          - name: esp32-c5-c6-c61-h2-rp2350-riscv
+            target: riscv32imac-unknown-none-elf
+          - name: esp32-p4
+            target: riscv32imafc-unknown-none-elf
+          - name: rp2040-stm32f0-g0-l0-nrf51-samd21
+            target: thumbv6m-none-eabi
+          - name: stm32f1-f2-l1-sam3-sam4
+            target: thumbv7m-none-eabi
+          - name: stm32f3-l4-cortex-m4
+            target: thumbv7em-none-eabi
+          - name: stm32f4-f7-h7-nrf52-samd51
+            target: thumbv7em-none-eabihf
+          - name: saml10-l11-cortex-m23
+            target: thumbv8m.base-none-eabi
+          - name: cortex-m33-soft-float
+            target: thumbv8m.main-none-eabi
+          - name: rp2350-arm-stm32h5-l5-u5-nrf53-54-lpc55
+            target: thumbv8m.main-none-eabihf
         variant:
           - name: qmi8658c
             args: "--features defmt,fixed"
           - name: qmi8658a
             args: "--no-default-features --features qmi8658a,defmt,fixed"
-    name: build-cross (${{ matrix.target }}, ${{ matrix.variant.name }})
+    name: build-cross (${{ matrix.platform.name }}, ${{ matrix.variant.name }})
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.platform.target }}
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Build
-        run: cargo build -p ph-qmi8658 --target ${{ matrix.target }} ${{ matrix.variant.args }}
+        run: |
+          cargo build -p ph-qmi8658 \
+            --target ${{ matrix.platform.target }} \
+            ${{ matrix.variant.args }}
 
   cargo-deny:
     runs-on: ubuntu-latest

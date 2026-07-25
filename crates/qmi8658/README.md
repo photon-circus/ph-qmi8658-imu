@@ -331,14 +331,28 @@ Tested targets include:
 - `xtensa-esp32s2-none-elf`
 - `xtensa-esp32s3-none-elf`
 
-**ESP32 (RISC-V)**:
-- `riscv32imc-unknown-none-elf`
-- `riscv32imac-unknown-none-elf`
+**ESP32 (RISC-V)** &mdash; standard Rust toolchains:
+- `riscv32imc-unknown-none-elf`: ESP32-C2 and ESP32-C3
+- `riscv32imac-unknown-none-elf`: ESP32-C5, ESP32-C6, ESP32-C61, and ESP32-H2
+- `riscv32imafc-unknown-none-elf`: ESP32-P4
 
-**ARM Cortex-M** &mdash; standard Rust toolchains:
-- `thumbv6m-none-eabi`, `thumbv7m-none-eabi`, `thumbv7em-none-eabi`,
-  `thumbv7em-none-eabihf`, `thumbv8m.base-none-eabi`, `thumbv8m.main-none-eabi`,
-  `thumbv8m.main-none-eabihf`
+**Raspberry Pi RP series**:
+- `thumbv6m-none-eabi`: RP2040
+- `thumbv8m.main-none-eabihf`: RP2350/RP2354 Arm Cortex-M33
+- `riscv32imac-unknown-none-elf`: RP2350/RP2354 Hazard3 RISC-V
+
+**Other common ARM Cortex-M families** &mdash; standard Rust toolchains:
+- `thumbv6m-none-eabi`: STM32F0/G0/L0, nRF51, SAMD21
+- `thumbv7m-none-eabi`: STM32F1/F2/L1, SAM3/SAM4
+- `thumbv7em-none-eabi` and `thumbv7em-none-eabihf`: STM32F3/F4/F7/H7/L4,
+  nRF52, SAMD51
+- `thumbv8m.base-none-eabi`: Cortex-M23 devices such as SAM L10/L11
+- `thumbv8m.main-none-eabi` and `thumbv8m.main-none-eabihf`: STM32H5/L5/U5,
+  nRF53/nRF54, LPC55, and other Cortex-M33 devices
+
+These are CPU/ABI compile checks for the HAL-independent driver. Only the
+ESP32-S3 applications in this repository provide a board-level integration
+build.
 
 ## Cargo Features
 
