@@ -151,4 +151,33 @@ mod tests {
             .with_group(PullUpGroup::SclSda, true);
         assert_eq!(config.cal1_l(), 0x0C);
     }
+
+    #[test]
+    fn each_group_maps_to_its_documented_bit() {
+        assert_eq!(
+            PullUpConfig::new()
+                .with_group(PullUpGroup::Aux, true)
+                .cal1_l(),
+            0x01
+        );
+        assert_eq!(
+            PullUpConfig::new()
+                .with_group(PullUpGroup::Sdx, true)
+                .cal1_l(),
+            0x02
+        );
+        assert_eq!(
+            PullUpConfig::new()
+                .with_group(PullUpGroup::Cs, true)
+                .cal1_l(),
+            0x04
+        );
+        assert_eq!(
+            PullUpConfig::new()
+                .with_group(PullUpGroup::SclSda, true)
+                .cal1_l(),
+            0x08
+        );
+        assert_eq!(PullUpConfig::new().disable_all().cal1_l() & 0xF0, 0);
+    }
 }

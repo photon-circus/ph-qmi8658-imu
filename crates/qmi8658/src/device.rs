@@ -859,18 +859,26 @@ impl<I2C> DeviceCore<I2cInterface<I2C>> {
 }
 #[cfg(test)]
 mod tests {
+    extern crate alloc;
+
     use super::*;
-    use crate::config::Config;
+    use crate::config::{AccelConfig, AccelOutputDataRate, AccelRange, Config};
     use crate::interface::InterfaceSettings;
-    use crate::register::{Register, status_int};
+    use crate::register::{Register, ctrl7, ctrl9, reset, status_int};
     use crate::testing::{MockDelay, MockInterface};
+    use crate::wom::WomConfig;
+    use alloc::vec;
     use futures::executor::block_on;
+
+    const fn default_settings() -> InterfaceSettings {
+        InterfaceSettings::new(true, true, false, false, false, false)
+    }
 
     #[test]
     fn apply_config_writes_ctrls_in_order() {
         let interface = MockInterface::default();
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, true, false, false, false, false);
+        let settings = default_settings();
         let mut core = DeviceCore::new(interface, config, settings);
 
         block_on(core.apply_config()).expect("apply config");
@@ -892,13 +900,229 @@ mod tests {
         let interface =
             MockInterface::default().with_reg(Register::StatusInt.addr(), status_int::CMD_DONE);
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, true, false, false, false, false);
+        let settings = default_settings();
         let mut core = DeviceCore::new(interface, config, settings);
 
         let mut delay = MockDelay::default();
         block_on(core.wait_ctrl9_done(&mut delay)).expect("ctrl9 done");
 
         assert_eq!(delay.calls, 0);
+        assert_eq!(core.interface.reads(), [Register::StatusInt.addr()]);
+        assert_eq!(
+            core.interface.writes(),
+            [(Register::Ctrl9.addr(), ctrl9::CMD_ACK)]
+        );
+    }
+
+    #[test]
+    fn wait_ctrl9_done_times_out_without_ack() {
+        let interface = MockInterface::default();
+        let mut core = DeviceCore::new(interface, Config::new(), default_settings());
+        let mut delay = MockDelay::default();
+
+        assert_eq!(
+            block_on(core.wait_ctrl9_done(&mut delay)),
+            Err(Error::NotReady)
+        );
+        assert_eq!(core.interface.reads().len(), 100);
+        assert!(
+            core.interface
+                .reads()
+                .iter()
+                .all(|reg| *reg == Register::StatusInt.addr())
+        );
+        assert!(core.interface.writes().is_empty());
+        assert_eq!(delay.calls, 99);
+    }
+
+    #[test]
+    fn calibration_can_complete_after_normal_ctrl9_timeout() {
+        let mut sequence = vec![Ok(0); 150];
+        sequence.push(Ok(status_int::CMD_DONE));
+        let interface = MockInterface::default()
+            .with_read_sequence(Register::StatusInt.addr(), sequence.as_slice());
+        let mut core = DeviceCore::new(interface, Config::new(), default_settings());
+        let mut delay = MockDelay::default();
+
+        block_on(core.run_on_demand_calibration(&mut delay)).expect("calibration");
+
+        assert_eq!(delay.calls, 150);
+        assert_eq!(
+            core.interface.writes()[..3],
+            [
+                (Register::Ctrl7.addr(), 0),
+                (Register::Ctrl9.addr(), ctrl9::CMD_ON_DEMAND_CALIBRATION),
+                (Register::Ctrl9.addr(), ctrl9::CMD_ACK),
+            ]
+        );
+    }
+
+    #[test]
+    fn reset_can_complete_on_first_status_read() {
+        let sequence = [Ok(reset::RESET_DONE)];
+        let interface =
+            MockInterface::default().with_read_sequence(reset::RESET_DONE_REG, sequence.as_slice());
+        let mut core = DeviceCore::new(interface, Config::new(), default_settings());
+        let mut delay = MockDelay::default();
+
+        block_on(core.soft_reset(&mut delay)).expect("reset");
+
+        assert_eq!(delay.calls, 1);
+        assert_eq!(delay.total_ns, 1_000_000);
+    }
+
+    #[test]
+    fn reset_can_complete_after_not_ready_reads() {
+        let sequence = [Ok(0), Ok(0), Ok(reset::RESET_DONE)];
+        let interface =
+            MockInterface::default().with_read_sequence(reset::RESET_DONE_REG, sequence.as_slice());
+        let mut core = DeviceCore::new(interface, Config::new(), default_settings());
+        let mut delay = MockDelay::default();
+
+        block_on(core.soft_reset(&mut delay)).expect("reset");
+
+        assert_eq!(delay.calls, 3);
+        assert_eq!(delay.total_ns, 3_000_000);
+    }
+
+    #[test]
+    fn reset_accepts_exact_done_value_after_transient_failures() {
+        let sequence = [
+            Err(Error::Bus),
+            Ok(0),
+            Err(Error::Bus),
+            Ok(reset::RESET_DONE),
+        ];
+        let interface =
+            MockInterface::default().with_read_sequence(reset::RESET_DONE_REG, sequence.as_slice());
+        let mut core = DeviceCore::new(interface, Config::new(), default_settings());
+        core.mode.set_mode(OperatingMode::AccelGyroOnly);
+        let mut delay = MockDelay::default();
+
+        block_on(core.soft_reset(&mut delay)).expect("reset");
+
+        assert_eq!(core.operating_mode(), OperatingMode::PowerOnDefault);
+        assert_eq!(delay.calls, 4);
+        assert_eq!(delay.total_ns, 4_000_000);
+    }
+
+    #[test]
+    fn reset_wrong_values_timeout_without_changing_mode() {
+        let sequence = [Ok(0x81); 20];
+        let interface =
+            MockInterface::default().with_read_sequence(reset::RESET_DONE_REG, sequence.as_slice());
+        let mut core = DeviceCore::new(interface, Config::new(), default_settings());
+        core.mode.set_mode(OperatingMode::AccelGyroOnly);
+        let mut delay = MockDelay::default();
+
+        assert_eq!(block_on(core.soft_reset(&mut delay)), Err(Error::NotReady));
+        assert_eq!(core.operating_mode(), OperatingMode::AccelGyroOnly);
+        assert_eq!(delay.calls, 20);
+        assert_eq!(delay.total_ns, 20_000_000);
+    }
+
+    #[test]
+    fn reset_returns_bus_when_every_status_read_fails() {
+        let sequence = [Err(Error::Bus); 20];
+        let interface =
+            MockInterface::default().with_read_sequence(reset::RESET_DONE_REG, sequence.as_slice());
+        let mut core = DeviceCore::new(interface, Config::new(), default_settings());
+        let mut delay = MockDelay::default();
+
+        assert_eq!(block_on(core.soft_reset(&mut delay)), Err(Error::Bus));
+        assert_eq!(delay.calls, 20);
+    }
+
+    #[test]
+    fn drdy_policy_survives_config_and_sync_transitions() {
+        let interface = MockInterface::default();
+        let mut core = DeviceCore::new(interface, Config::new(), default_settings());
+
+        block_on(core.apply_config()).expect("config");
+        block_on(core.set_drdy_enabled(false)).expect("disable drdy");
+        assert!(!core.drdy_enabled());
+        assert_eq!(
+            core.interface.writes().last(),
+            Some(&(
+                Register::Ctrl7.addr(),
+                ctrl7::A_EN | ctrl7::G_EN | ctrl7::DRDY_DIS
+            ))
+        );
+
+        block_on(core.set_sync_sample(true)).expect("sync on");
+        assert_eq!(
+            core.interface.writes().last(),
+            Some(&(
+                Register::Ctrl7.addr(),
+                ctrl7::A_EN | ctrl7::G_EN | ctrl7::SYNC_SMPL
+            ))
+        );
+        assert!(!core.drdy_enabled());
+
+        block_on(core.set_sync_sample(false)).expect("sync off");
+        assert_eq!(
+            core.interface.writes().last(),
+            Some(&(
+                Register::Ctrl7.addr(),
+                ctrl7::A_EN | ctrl7::G_EN | ctrl7::DRDY_DIS
+            ))
+        );
+
+        block_on(core.apply_config()).expect("reapply config");
+        assert_eq!(
+            core.interface.writes().last(),
+            Some(&(
+                Register::Ctrl7.addr(),
+                ctrl7::A_EN | ctrl7::G_EN | ctrl7::DRDY_DIS
+            ))
+        );
+    }
+
+    #[test]
+    fn drdy_policy_is_used_by_set_mode() {
+        let config = Config::new().without_gyro();
+        let interface = MockInterface::default();
+        let mut core = DeviceCore::new(interface, config, default_settings());
+
+        block_on(core.set_drdy_enabled(false)).expect("disable drdy");
+        block_on(core.set_mode(OperatingMode::AccelOnly)).expect("accel mode");
+
+        assert_eq!(
+            core.interface.writes().last(),
+            Some(&(Register::Ctrl7.addr(), ctrl7::A_EN | ctrl7::DRDY_DIS))
+        );
+    }
+
+    #[test]
+    fn drdy_policy_survives_wom_entry_and_exit() {
+        let accel = AccelConfig::new(AccelRange::G8, AccelOutputDataRate::LowPowerHz21);
+        let config = Config::new().with_accel_config(accel).without_gyro();
+        let interface =
+            MockInterface::default().with_reg(Register::StatusInt.addr(), status_int::CMD_DONE);
+        let mut core = DeviceCore::new(interface, config, default_settings());
+        let mut delay = MockDelay::default();
+
+        block_on(core.set_drdy_enabled(false)).expect("disable drdy");
+        block_on(core.enable_wom(&mut delay, WomConfig::new(10))).expect("enable wom");
+        assert_eq!(
+            core.interface.writes().last(),
+            Some(&(Register::Ctrl7.addr(), ctrl7::A_EN | ctrl7::DRDY_DIS))
+        );
+
+        block_on(core.disable_wom(&mut delay)).expect("disable wom");
+        block_on(core.apply_config()).expect("restore config");
+        assert_eq!(
+            core.interface.writes().last(),
+            Some(&(Register::Ctrl7.addr(), ctrl7::A_EN | ctrl7::DRDY_DIS))
+        );
+    }
+
+    #[test]
+    fn self_test_t6_uses_two_output_periods() {
+        let core = DeviceCore::new(MockInterface::default(), Config::new(), default_settings());
+
+        assert_eq!(core.t6_ns_from_odr_milli(1_000_000), 2_000_000);
+        assert_eq!(core.t6_ns_from_odr_milli(500_000), 4_000_000);
     }
 
     #[test]
