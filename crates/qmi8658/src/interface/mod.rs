@@ -34,14 +34,27 @@ pub(crate) struct InterfaceSettings {
     pub(crate) auto_increment: bool,
     pub(crate) big_endian: bool,
     pub(crate) spi_3_wire: bool,
+    pub(crate) enable_int1: bool,
+    pub(crate) enable_int2: bool,
+    pub(crate) fifo_int_use_int1: bool,
 }
 
 impl InterfaceSettings {
-    pub(crate) const fn new(auto_increment: bool, big_endian: bool, spi_3_wire: bool) -> Self {
+    pub(crate) const fn new(
+        auto_increment: bool,
+        big_endian: bool,
+        spi_3_wire: bool,
+        enable_int1: bool,
+        enable_int2: bool,
+        fifo_int_use_int1: bool,
+    ) -> Self {
         Self {
             auto_increment,
             big_endian,
             spi_3_wire,
+            enable_int1,
+            enable_int2,
+            fifo_int_use_int1,
         }
     }
 
@@ -56,12 +69,21 @@ impl InterfaceSettings {
         if self.big_endian {
             value |= ctrl1::BE;
         }
+        if self.enable_int1 {
+            value |= ctrl1::INT1_EN;
+        }
+        if self.enable_int2 {
+            value |= ctrl1::INT2_EN;
+        }
+        if self.fifo_int_use_int1 {
+            value |= ctrl1::FIFO_INT_SEL;
+        }
         value
     }
 }
 
 impl Default for InterfaceSettings {
     fn default() -> Self {
-        Self::new(true, true, false)
+        Self::new(true, true, false, true, true, true)
     }
 }
