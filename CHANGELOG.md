@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 - No entries yet.
 
+## 0.1.2 - 2026-07-25
+### Changed
+- Bumped crate version to `0.1.2` to prepare this branch for publishing.
+
 ## 0.1.1 - 2026-02-09
 ### Added
 - Integer scaling helpers (`ScaleFactor`, `accel_mg_per_lsb`, `gyro_mdps_per_lsb`) for
