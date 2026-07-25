@@ -80,9 +80,9 @@ where
             delay.delay_ns(POLL_DELAY_NS).await;
         }
 
-        Err(Error::ResetFailed) 
+        Err(Error::ResetFailed)
     }
-    
+
     pub(crate) async fn verify_device(&mut self) -> Result<(), Error> {
         let who = self.read_reg(Register::WhoAmI).await?;
         if who != who_am_i::EXPECTED {
