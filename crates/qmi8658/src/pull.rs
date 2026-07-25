@@ -1,6 +1,7 @@
 use crate::register::ctrl9;
 
 /// Groups of controllable pull-up resistors (per datasheet Table 30).
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PullUpGroup {
@@ -10,8 +11,8 @@ pub enum PullUpGroup {
     Sdx,
     /// CS (Chip Select) pin.
     Cs,
-    /// I2C pin group: SCL and SDA.
-    I2c,
+    /// SCL and SDA pins, shared by I2C and SPI host interfaces.
+    SclSda,
 }
 
 /// Configuration for pull-up resistor control.
@@ -19,20 +20,20 @@ pub enum PullUpGroup {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PullUpConfig {
     /// Auxiliary group pull-up state (true: disabled, false: enabled).
-    pub aux_disable: bool,
+    aux_disable: bool,
     /// SDx pin pull-up state (true: disabled, false: enabled).
-    pub sdx_disable: bool,
+    sdx_disable: bool,
     /// CS pin pull-up state (true: disabled, false: enabled).
-    pub cs_disable: bool,
+    cs_disable: bool,
     /// I2C group pull-up state (true: disabled, false: enabled).
-    pub i2c_disable: bool,
+    scl_sda_disable: bool,
 }
 
 /// Bit mapping for pull-up disable flags in the CAL1_L register.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
-pub enum PullUpDisableBits {
+enum PullUpDisableBits {
     /// Auxiliary group disable bit (bit 0).
     Aux = 0x01,
     /// SDx pin disable bit (bit 1).
@@ -40,7 +41,7 @@ pub enum PullUpDisableBits {
     /// CS pin disable bit (bit 2).
     Cs = 0x04,
     /// I2C group disable bit (bit 3).
-    I2c = 0x08,
+    SclSda = 0x08,
 }
 
 impl PullUpConfig {
@@ -49,7 +50,7 @@ impl PullUpConfig {
         aux_disable: false,
         sdx_disable: false,
         cs_disable: false,
-        i2c_disable: false,
+        scl_sda_disable: false,
     };
 
     /// Creates a new default pull-up configuration.
@@ -66,7 +67,7 @@ impl PullUpConfig {
             PullUpGroup::Aux => self.aux_disable = disable,
             PullUpGroup::Sdx => self.sdx_disable = disable,
             PullUpGroup::Cs => self.cs_disable = disable,
-            PullUpGroup::I2c => self.i2c_disable = disable,
+            PullUpGroup::SclSda => self.scl_sda_disable = disable,
         }
         self
     }
@@ -77,18 +78,7 @@ impl PullUpConfig {
         self.aux_disable = true;
         self.sdx_disable = true;
         self.cs_disable = true;
-        self.i2c_disable = true;
-        self
-    }
-
-    /// Disables SPI-related pull-ups only (SDx, CS, and Aux groups).
-    /// Useful for low-power SPI operation while maintaining I2C compatibility.
-    #[must_use]
-    pub const fn disable_spi_related(mut self) -> Self {
-        self.aux_disable = true;
-        self.sdx_disable = true;
-        self.cs_disable = true;
-        self.i2c_disable = false;
+        self.scl_sda_disable = true;
         self
     }
 
@@ -105,16 +95,10 @@ impl PullUpConfig {
         if self.cs_disable {
             bits |= PullUpDisableBits::Cs as u8;
         }
-        if self.i2c_disable {
-            bits |= PullUpDisableBits::I2c as u8;
+        if self.scl_sda_disable {
+            bits |= PullUpDisableBits::SclSda as u8;
         }
         bits & 0x0F // Ensure upper 4 bits remain 0 as they are reserved.
-    }
-
-    pub(crate) const fn cal1_h(self) -> u8 {
-        // Note: CAL1_H is typically not required for the SET_RPU command,
-        // as only the lower 4 bits of the payload are defined.
-        0x00
     }
 
     pub(crate) const fn ctrl9_cmd(&self) -> u8 {
@@ -134,8 +118,10 @@ mod tests {
 
     #[test]
     fn cal1_l_generates_correct_bits() {
-        // Test: Disable SPI related (Aux+Sdx+Cs), enable I2C
-        let config = PullUpConfig::new().disable_spi_related();
+        let config = PullUpConfig::new()
+            .with_group(PullUpGroup::Aux, true)
+            .with_group(PullUpGroup::Sdx, true)
+            .with_group(PullUpGroup::Cs, true);
         assert_eq!(
             config.cal1_l(),
             PullUpDisableBits::Aux as u8
@@ -150,7 +136,7 @@ mod tests {
             PullUpDisableBits::Aux as u8
                 | PullUpDisableBits::Sdx as u8
                 | PullUpDisableBits::Cs as u8
-                | PullUpDisableBits::I2c as u8
+                | PullUpDisableBits::SclSda as u8
         );
 
         // Test: Default (All enabled)
@@ -162,11 +148,7 @@ mod tests {
     fn with_group_updates_config_correctly() {
         let config = PullUpConfig::new()
             .with_group(PullUpGroup::Cs, true)
-            .with_group(PullUpGroup::I2c, true);
-        assert!(config.cs_disable);
-        assert!(config.i2c_disable);
-        assert!(!config.aux_disable);
-        assert!(!config.sdx_disable);
+            .with_group(PullUpGroup::SclSda, true);
         assert_eq!(config.cal1_l(), 0x0C);
     }
 }

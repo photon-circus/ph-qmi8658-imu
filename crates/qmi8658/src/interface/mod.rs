@@ -69,11 +69,14 @@ impl InterfaceSettings {
         if self.big_endian {
             value |= ctrl1::BE;
         }
-        if self.enable_int1 {
-            value |= ctrl1::INT1_EN;
-        }
-        if self.enable_int2 {
-            value |= ctrl1::INT2_EN;
+        #[cfg(feature = "qmi8658a")]
+        {
+            if self.enable_int1 {
+                value |= ctrl1::INT1_EN;
+            }
+            if self.enable_int2 {
+                value |= ctrl1::INT2_EN;
+            }
         }
         if self.fifo_int_use_int1 {
             value |= ctrl1::FIFO_INT_SEL;
@@ -84,6 +87,6 @@ impl InterfaceSettings {
 
 impl Default for InterfaceSettings {
     fn default() -> Self {
-        Self::new(true, true, false, true, true, true)
+        Self::new(true, true, false, false, false, false)
     }
 }

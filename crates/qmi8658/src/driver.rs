@@ -17,10 +17,10 @@ use crate::interface::Interface;
 use crate::interface::{I2cConfig, I2cInterface};
 use crate::interface::{SpiConfig, SpiInterface};
 use crate::interrupt::{InterruptConfig, InterruptStatus, InterruptWaitError};
+use crate::pull::PullUpConfig;
 use crate::register::Register;
 use crate::self_test::{SelfTestError, SelfTestReport};
 use crate::wom::WomConfig;
-use crate::pull::PullUpConfig;
 
 /// QMI8658 6-axis IMU driver.
 pub struct Qmi8658<I, INT1 = (), INT2 = ()> {
@@ -147,6 +147,19 @@ where
     /// Returns whether sync sample mode is enabled.
     pub fn sync_sample_enabled(&self) -> bool {
         self.core.sync_sample_enabled()
+    }
+
+    /// Returns whether Data Ready output is requested in non-SyncSample modes.
+    pub fn drdy_enabled(&self) -> bool {
+        self.core.drdy_enabled()
+    }
+
+    /// Enables or disables the Data Ready output in non-SyncSample modes.
+    ///
+    /// SyncSample mode always routes DRDY to INT2 as required by the device.
+    /// The requested value is retained and restored when SyncSample is disabled.
+    pub async fn set_drdy_enabled(&mut self, enable: bool) -> Result<(), Error> {
+        self.core.set_drdy_enabled(enable).await
     }
 
     /// Enables or disables sync sample mode.
@@ -569,7 +582,7 @@ where
 
         self.core.write_reg(Register::Ctrl7, 0).await?;
         delay
-            .delay_ns(self.core.t6_ns_from_odr_milli(accel.odr.hz_milli()) as u32)
+            .delay_ns(self.core.t6_ns_from_odr_milli(accel.odr.hz_milli()))
             .await;
         self.core.write_reg(Register::Ctrl2, ctrl2_st).await?;
 
@@ -609,7 +622,7 @@ where
 
         self.core.write_reg(Register::Ctrl7, 0).await?;
         delay
-            .delay_ns(self.core.t6_ns_from_odr_milli(gyro.odr.hz_milli()) as u32)
+            .delay_ns(self.core.t6_ns_from_odr_milli(gyro.odr.hz_milli()))
             .await;
         self.core.write_reg(Register::Ctrl3, ctrl3_st).await?;
 
@@ -742,7 +755,7 @@ mod tests {
     fn apply_fifo_config_writes_fifo_registers() {
         let interface = MockInterface::default();
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, true, false, true, true, true);
+        let settings = InterfaceSettings::new(true, true, false, false, false, false);
         let core = DeviceCore::new(interface, config, settings);
         let mut driver: Qmi8658<MockInterface, (), ()> = Qmi8658 {
             core,
@@ -764,7 +777,7 @@ mod tests {
     fn apply_interrupt_config_writes_ctrl8() {
         let interface = MockInterface::default();
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, true, false, true, true, true);
+        let settings = InterfaceSettings::new(true, true, false, false, false, false);
         let core = DeviceCore::new(interface, config, settings);
         let mut driver: Qmi8658<MockInterface, (), ()> = Qmi8658 {
             core,
@@ -786,7 +799,7 @@ mod tests {
     fn apply_pull_up_config_writes_cal1_and_ctrl9() {
         let interface = MockInterface::default();
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, true, false, true, true, true);
+        let settings = InterfaceSettings::new(true, true, false, false, false, false);
         let core = DeviceCore::new(interface, config, settings);
         let mut driver: Qmi8658<MockInterface, (), ()> = Qmi8658 {
             core,
@@ -794,7 +807,10 @@ mod tests {
             int2: None,
         };
 
-        let pull_up = PullUpConfig::new().disable_spi_related();
+        let pull_up = PullUpConfig::new()
+            .with_group(crate::pull::PullUpGroup::Aux, true)
+            .with_group(crate::pull::PullUpGroup::Sdx, true)
+            .with_group(crate::pull::PullUpGroup::Cs, true);
         block_on(driver.apply_pull_up_config(pull_up)).expect("pull-up config");
 
         let interface = driver.core.release();
@@ -803,7 +819,6 @@ mod tests {
             writes,
             [
                 (Register::Cal1L.addr(), pull_up.cal1_l()),
-                (Register::Cal1H.addr(), pull_up.cal1_h()),
                 (Register::Ctrl9.addr(), pull_up.ctrl9_cmd()),
             ]
         );
@@ -814,7 +829,7 @@ mod tests {
         let interface =
             MockInterface::default().with_reg(Register::StatusInt.addr(), status_int::CMD_DONE);
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, true, false, true, true, true);
+        let settings = InterfaceSettings::new(true, true, false, false, false, false);
         let core = DeviceCore::new(interface, config, settings);
         let mut driver: Qmi8658<MockInterface, (), ()> = Qmi8658 {
             core,
@@ -833,7 +848,6 @@ mod tests {
             writes,
             [
                 (Register::Cal1L.addr(), pull_up.cal1_l()),
-                (Register::Cal1H.addr(), pull_up.cal1_h()),
                 (Register::Ctrl9.addr(), pull_up.ctrl9_cmd()),
                 (Register::Ctrl9.addr(), 0x00),
             ]

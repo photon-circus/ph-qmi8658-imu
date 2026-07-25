@@ -195,7 +195,10 @@ impl FifoFrameFormat {
     /// Returns the maximum number of complete frames in the provided byte count.
     pub const fn frame_count(self, bytes: usize) -> usize {
         let frame = self.bytes_per_frame();
-        if frame == 0 { 0 } else { bytes / frame }
+        match bytes.checked_div(frame) {
+            Some(count) => count,
+            None => 0,
+        }
     }
 }
 
@@ -351,10 +354,9 @@ impl FifoStatus {
 
     /// Converts the byte count to samples given a frame size.
     pub const fn samples(self, bytes_per_sample: u16) -> u16 {
-        if bytes_per_sample == 0 {
-            0
-        } else {
-            self.sample_count_bytes / bytes_per_sample
+        match self.sample_count_bytes.checked_div(bytes_per_sample) {
+            Some(count) => count,
+            None => 0,
         }
     }
 }

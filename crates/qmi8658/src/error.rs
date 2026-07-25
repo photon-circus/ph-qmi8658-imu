@@ -16,6 +16,4 @@ pub enum Error {
     InvalidData,
     /// Operation not supported.
     Unsupported,
-    /// Device reset failed.
-    ResetFailed,
 }

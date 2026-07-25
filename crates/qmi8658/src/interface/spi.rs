@@ -26,9 +26,9 @@ impl SpiConfig {
             auto_increment: true,
             big_endian: true,
             three_wire: false,
-            enable_int1: true,
-            enable_int2: true,
-            fifo_int_use_int1: true,
+            enable_int1: false,
+            enable_int2: false,
+            fifo_int_use_int1: false,
         }
     }
 
@@ -54,6 +54,7 @@ impl SpiConfig {
     }
 
     /// Enables or disables INT1 pin (push-pull mode).
+    #[cfg(feature = "qmi8658a")]
     #[must_use]
     pub const fn with_enable_int1(mut self, enable: bool) -> Self {
         self.enable_int1 = enable;
@@ -61,6 +62,7 @@ impl SpiConfig {
     }
 
     /// Enables or disables INT2 pin (push-pull mode).
+    #[cfg(feature = "qmi8658a")]
     #[must_use]
     pub const fn with_enable_int2(mut self, enable: bool) -> Self {
         self.enable_int2 = enable;

@@ -1,7 +1,7 @@
 [package]
 name = "ph-qmi8658"
 version = "0.1.2"
-description = "Async no_std driver for the QMI8658C 6-axis IMU (accelerometer + gyroscope) built on embedded-hal-async"
+description = "Async no_std driver for the QMI8658A/C 6-axis IMU (accelerometer + gyroscope) built on embedded-hal-async"
 authors = ["Steven Giacomelli <steve@giacomelli.ca>"]
 edition = "2024"
 license = "MIT"
@@ -24,7 +24,9 @@ defmt = { version = "1.1.1", optional = true }
 fixed = { version = "1.28.0", default-features = false, optional = true }
 
 [features]
-default = []
+default = ["qmi8658c"]
+qmi8658a = []
+qmi8658c = []
 defmt = ["dep:defmt"]
 fixed = ["dep:fixed"]
 
@@ -32,5 +34,5 @@ fixed = ["dep:fixed"]
 futures = { version = "0.3", default-features = false, features = ["std", "executor"] }
 
 [package.metadata.docs.rs]
-all-features = true
+features = ["qmi8658c", "defmt", "fixed"]
 rustdoc-args = ["--cfg", "docsrs"]

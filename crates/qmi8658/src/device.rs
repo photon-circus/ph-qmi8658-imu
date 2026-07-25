@@ -22,8 +22,8 @@ pub(crate) struct DeviceCore<I> {
     config: Config,
     settings: InterfaceSettings,
     mode: OperatingModeStateMachine,
-    ctrl9_handshake_statusint: bool,
     ctrl7_flags: u8,
+    drdy_enabled: bool,
 }
 
 impl<I> DeviceCore<I>
@@ -36,8 +36,8 @@ where
             config,
             settings,
             mode: OperatingModeStateMachine::new(OperatingMode::PowerOnDefault),
-            ctrl9_handshake_statusint: false,
             ctrl7_flags: 0,
+            drdy_enabled: true,
         }
     }
 
@@ -68,19 +68,30 @@ where
         self.write_reg(Register::Reset, reset::SOFT_RESET).await?;
 
         const POLL_RETRIES: u8 = 20;
-        const POLL_DELAY_NS: u32 = 10_000_000;
+        const POLL_DELAY_NS: u32 = 1_000_000;
+        let mut read_succeeded = false;
 
-        for _ in 0..POLL_RETRIES {
-            let status = self.interface.read_reg(reset::RESET_DONE_REG).await?;
-
-            if (status & reset::RESET_DONE) != 0 {
-                self.mode = OperatingModeStateMachine::new(OperatingMode::PowerOnDefault);
-                return Ok(());
+        delay.delay_ns(POLL_DELAY_NS).await;
+        for attempt in 0..POLL_RETRIES {
+            match self.interface.read_reg(reset::RESET_DONE_REG).await {
+                Ok(reset::RESET_DONE) => {
+                    self.mode = OperatingModeStateMachine::new(OperatingMode::PowerOnDefault);
+                    return Ok(());
+                }
+                Ok(_) => read_succeeded = true,
+                Err(_) => {}
             }
-            delay.delay_ns(POLL_DELAY_NS).await;
+
+            if attempt + 1 < POLL_RETRIES {
+                delay.delay_ns(POLL_DELAY_NS).await;
+            }
         }
 
-        Err(Error::ResetFailed)
+        if read_succeeded {
+            Err(Error::NotReady)
+        } else {
+            Err(Error::Bus)
+        }
     }
 
     pub(crate) async fn verify_device(&mut self) -> Result<(), Error> {
@@ -102,10 +113,7 @@ where
             .await?;
         self.write_reg(Register::Ctrl5, self.config.ctrl5_value())
             .await?;
-        let mut ctrl7_value = self.config.ctrl7_value();
-        if ctrl7_value != 0 {
-            ctrl7_value |= self.ctrl7_flags;
-        }
+        let ctrl7_value = self.compose_ctrl7(self.config.ctrl7_value());
         self.write_reg(Register::Ctrl7, ctrl7_value).await?;
         self.mode.set_mode(self.config.target_mode());
         Ok(())
@@ -114,7 +122,6 @@ where
     /// Applies Pull-up resistor configuration (CAL1_L + CTRL9 command).
     pub(crate) async fn apply_pull_up_config(&mut self, config: PullUpConfig) -> Result<(), Error> {
         self.write_reg(Register::Cal1L, config.cal1_l()).await?;
-        self.write_reg(Register::Cal1H, config.cal1_h()).await?;
         self.write_reg(Register::Ctrl9, config.ctrl9_cmd()).await
     }
 
@@ -130,6 +137,21 @@ where
 
     pub(crate) const fn sync_sample_enabled(&self) -> bool {
         (self.ctrl7_flags & ctrl7::SYNC_SMPL) != 0
+    }
+
+    pub(crate) const fn drdy_enabled(&self) -> bool {
+        self.drdy_enabled
+    }
+
+    pub(crate) async fn set_drdy_enabled(&mut self, enable: bool) -> Result<(), Error> {
+        self.drdy_enabled = enable;
+
+        if self.mode.mode() == OperatingMode::PowerOnDefault {
+            return Ok(());
+        }
+
+        let ctrl7_value = self.ctrl7_for_mode(self.mode.mode())?;
+        self.write_reg(Register::Ctrl7, ctrl7_value).await
     }
 
     pub(crate) async fn set_sync_sample(&mut self, enable: bool) -> Result<(), Error> {
@@ -177,7 +199,6 @@ where
         &mut self,
         config: InterruptConfig,
     ) -> Result<(), Error> {
-        self.ctrl9_handshake_statusint = config.ctrl9_handshake_statusint;
         self.write_reg(Register::Ctrl8, config.ctrl8_value()).await
     }
 
@@ -312,7 +333,7 @@ where
         self.write_reg(Register::Ctrl7, 0).await?;
         self.write_reg(Register::Ctrl9, ctrl9::CMD_ON_DEMAND_CALIBRATION)
             .await?;
-        self.wait_ctrl9_done(delay).await?;
+        self.wait_ctrl9_done_with_retries(delay, 2_000).await?;
         self.apply_config().await
     }
 
@@ -346,8 +367,7 @@ where
             .await?;
         self.apply_wom_config_with_delay(delay, config).await?;
 
-        let mut ctrl7_value = ctrl7::A_EN;
-        ctrl7_value |= self.ctrl7_flags;
+        let ctrl7_value = self.compose_ctrl7(ctrl7::A_EN);
         self.write_reg(Register::Ctrl7, ctrl7_value).await?;
         self.mode.set_mode(OperatingMode::WakeOnMotion);
         Ok(())
@@ -428,37 +448,27 @@ where
 
     /// Waits for CTRL9 command completion by polling the CmdDone bit.
     pub(crate) async fn wait_ctrl9_done<D: DelayNs>(&mut self, delay: &mut D) -> Result<(), Error> {
-        const POLL_RETRIES: u8 = 100;
+        self.wait_ctrl9_done_with_retries(delay, 100).await
+    }
+
+    async fn wait_ctrl9_done_with_retries<D: DelayNs>(
+        &mut self,
+        delay: &mut D,
+        poll_retries: u16,
+    ) -> Result<(), Error> {
         const POLL_DELAY_NS: u32 = 1_000_000;
 
-        for _ in 0..POLL_RETRIES {
-            // NOTE: Per datasheet, CTRL9 command completion can be notified via INT1 (with CTRL8.bit7=0).
-            // While INT1 interrupt callback is theoretically more efficient than polling,
-            // we retain the polling implementation for practicality and code simplicity.
-            if self.ctrl9_handshake_statusint {
-                let status = self.read_reg(Register::StatusInt).await?;
-                if (status & status_int::CMD_DONE) != 0 {
-                    self.write_reg(Register::Ctrl9, 0x00).await?;
-                    return Ok(());
-                }
-            } else {
-                let status1 = self.read_reg(Register::Status1).await?;
-                if (status1 & crate::register::status1::CMD_DONE) != 0 {
-                    self.write_reg(Register::Ctrl9, 0x00).await?;
-                    return Ok(());
-                }
-                // Some revisions still surface CmdDone in STATUSINT even when INT1 is used.
-                let status = self.read_reg(Register::StatusInt).await?;
-                if (status & status_int::CMD_DONE) != 0 {
-                    self.write_reg(Register::Ctrl9, 0x00).await?;
-                    return Ok(());
-                }
+        for attempt in 0..poll_retries {
+            let status = self.read_reg(Register::StatusInt).await?;
+            if (status & status_int::CMD_DONE) != 0 {
+                self.write_reg(Register::Ctrl9, ctrl9::CMD_ACK).await?;
+                return Ok(());
             }
-            delay.delay_ns(POLL_DELAY_NS).await;
+            if attempt + 1 < poll_retries {
+                delay.delay_ns(POLL_DELAY_NS).await;
+            }
         }
 
-        // Don’t write to CTRL9 register, allow user to retry the operation.
-        // self.write_reg(Register::Ctrl9, 0x00).await?;
         Err(Error::NotReady)
     }
 
@@ -644,10 +654,12 @@ where
                 (Some(accel), None) if !accel.odr.is_low_power() => Ok(ctrl7::A_EN),
                 _ => Err(Error::InvalidData),
             },
-            OperatingMode::LowPowerAccel => match (self.config.accel, self.config.gyro) {
-                (Some(accel), None) if accel.odr.is_low_power() => Ok(ctrl7::A_EN),
-                _ => Err(Error::InvalidData),
-            },
+            OperatingMode::LowPowerAccel | OperatingMode::WakeOnMotion => {
+                match (self.config.accel, self.config.gyro) {
+                    (Some(accel), None) if accel.odr.is_low_power() => Ok(ctrl7::A_EN),
+                    _ => Err(Error::InvalidData),
+                }
+            }
             OperatingMode::GyroOnly => match (self.config.accel, self.config.gyro) {
                 (None, Some(_)) => Ok(ctrl7::G_EN),
                 _ => Err(Error::InvalidData),
@@ -659,11 +671,19 @@ where
             _ => Err(Error::Unsupported),
         }?;
 
+        Ok(self.compose_ctrl7(base))
+    }
+
+    const fn compose_ctrl7(&self, base: u8) -> u8 {
         if base == 0 {
-            Ok(0)
-        } else {
-            Ok(base | self.ctrl7_flags)
+            return 0;
         }
+
+        let mut value = base | self.ctrl7_flags;
+        if !self.sync_sample_enabled() && !self.drdy_enabled {
+            value |= ctrl7::DRDY_DIS;
+        }
+        value
     }
 
     pub(crate) fn sample_period_ns(&self) -> Option<u32> {
@@ -842,7 +862,7 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use crate::interface::InterfaceSettings;
-    use crate::register::{Register, status_int, status1};
+    use crate::register::{Register, status_int};
     use crate::testing::{MockDelay, MockInterface};
     use futures::executor::block_on;
 
@@ -850,7 +870,7 @@ mod tests {
     fn apply_config_writes_ctrls_in_order() {
         let interface = MockInterface::default();
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, true, false, true, true, true);
+        let settings = InterfaceSettings::new(true, true, false, false, false, false);
         let mut core = DeviceCore::new(interface, config, settings);
 
         block_on(core.apply_config()).expect("apply config");
@@ -868,13 +888,12 @@ mod tests {
     }
 
     #[test]
-    fn wait_ctrl9_done_uses_statusint_when_configured() {
+    fn wait_ctrl9_done_uses_statusint() {
         let interface =
             MockInterface::default().with_reg(Register::StatusInt.addr(), status_int::CMD_DONE);
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, true, false, true, true, true);
+        let settings = InterfaceSettings::new(true, true, false, false, false, false);
         let mut core = DeviceCore::new(interface, config, settings);
-        core.ctrl9_handshake_statusint = true;
 
         let mut delay = MockDelay::default();
         block_on(core.wait_ctrl9_done(&mut delay)).expect("ctrl9 done");
@@ -885,7 +904,6 @@ mod tests {
     #[test]
     fn read_gyro_bias_from_fifo_reads_expected_axes() {
         let mut interface = MockInterface::default();
-        interface.set_reg(Register::Status1.addr(), status1::CMD_DONE);
         interface.set_reg(Register::StatusInt.addr(), status_int::CMD_DONE);
         interface.set_reg(Register::FifoSmplCnt.addr(), 6);
         interface.set_reg(Register::FifoStatus.addr(), 0);
@@ -900,7 +918,7 @@ mod tests {
         interface.set_reg(fifo_base.wrapping_add(5), 0x00);
 
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, false, false, true, true, true);
+        let settings = InterfaceSettings::new(true, false, false, false, false, false);
         let mut core = DeviceCore::new(interface, config, settings);
 
         let mut delay = MockDelay::default();

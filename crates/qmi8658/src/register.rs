@@ -160,17 +160,21 @@ pub mod ctrl1 {
     pub const ADDR_AI: u8 = 0b0100_0000;
     /// Big-endian serial interface read data.
     pub const BE: u8 = 0b0010_0000;
-    /// 0: INT2 pin is high-Z mode
-    /// 1: INT2 pin output is enabled
+    /// QMI8658A: enable the INT2 push-pull output.
+    #[cfg(feature = "qmi8658a")]
     pub const INT2_EN: u8 = 0b0001_0000;
-    /// 0: INT1 pin is high-Z mode
-    /// 1: INT1 pin output is enabled
+    /// QMI8658A: enable the INT1 push-pull output.
+    #[cfg(feature = "qmi8658a")]
     pub const INT1_EN: u8 = 0b0000_1000;
     /// 0: FIFO interrupt is mapped to INT2 pin
     /// 1: FIFO interrupt is mapped to INT1 pin
     pub const FIFO_INT_SEL: u8 = 0b0000_0100;
-    /// Reserved bits.
+    /// Reserved bits for the selected device variant.
+    #[cfg(feature = "qmi8658a")]
     pub const RESERVED_MASK: u8 = 0b0000_0010;
+    /// Reserved bits for QMI8658C and the legacy no-variant build.
+    #[cfg(not(feature = "qmi8658a"))]
+    pub const RESERVED_MASK: u8 = 0b0001_1010;
     /// Disable the internal 2 MHz oscillator (power-down).
     pub const SENSOR_DISABLE: u8 = 0b0000_0001;
 }
@@ -294,6 +298,8 @@ pub mod ctrl9 {
     pub const CMD_MASK: u8 = 0b1111_1111;
     /// No operation.
     pub const CMD_NOP: u8 = 0b0000_0000;
+    /// Acknowledge a completed CTRL9 command.
+    pub const CMD_ACK: u8 = 0b0000_0000;
     /// Copy gyro bias from CAL registers.
     pub const CMD_GYRO_BIAS: u8 = 0b0000_0001;
     /// Request MoD (SDI) data.
@@ -410,8 +416,8 @@ pub mod status1 {
     pub const WOM: u8 = 0b0000_0100;
     /// Tap detected.
     pub const TAP: u8 = 0b0000_0010;
-    /// Ctrl9 command done (CTRL9 handshake when routed to STATUS1).
-    pub const CMD_DONE: u8 = 0b0000_0001;
+    /// Reserved bit.
+    pub const RESERVED_0: u8 = 0b0000_0001;
 }
 
 /// AttitudeEngine register 1 bits.
