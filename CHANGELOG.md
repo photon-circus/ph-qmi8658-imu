@@ -7,7 +7,13 @@ All notable changes to this project will be documented in this file.
 
 ## 0.1.2 - 2026-07-25
 ### Changed
-- Bumped crate version to `0.1.2` to prepare this branch for publishing.
+- Updated pull-up configuration APIs to `apply_pull_up_config*` naming for consistency.
+- Re-exported `PullUpGroup` from the crate root for easier public API access.
+- Switched soft-reset completion polling to explicit `RESET_DONE_REG` / `RESET_DONE` constants.
+- Clarified `SET_RPU` handling so `CAL1_H` remains zeroed for pull-up configuration commands.
+
+### Docs
+- Corrected minor documentation wording and formatting in release-bound updates.
 
 ## 0.1.1 - 2026-02-09
 ### Added
