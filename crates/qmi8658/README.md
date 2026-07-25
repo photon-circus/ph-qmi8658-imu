@@ -2,9 +2,9 @@
 
 [![Crates.io](https://img.shields.io/crates/v/ph-qmi8658.svg)](https://crates.io/crates/ph-qmi8658) [![Docs.rs](https://docs.rs/ph-qmi8658/badge.svg)](https://docs.rs/ph-qmi8658) [![CI](https://github.com/photon-circus/ph-qmi8658-imu/actions/workflows/ci.yml/badge.svg)](https://github.com/photon-circus/ph-qmi8658-imu/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
-Async `#![no_std]` driver for the [QMI8658C](https://www.qstcorp.com/en_comp_prod/QMI8658C)
-6-axis IMU (3-axis accelerometer + 3-axis gyroscope + temperature sensor) from QST
-Corporation. Built on `embedded-hal-async` with I2C and SPI transport support.
+Async `#![no_std]` driver for the QMI8658A/C 6-axis IMU (3-axis accelerometer,
+3-axis gyroscope, and temperature sensor) from QST Corporation. Built on
+`embedded-hal-async` with I2C and SPI transport support.
 
 MSRV: **1.92.0**
 
@@ -22,6 +22,28 @@ or flow sequencing, update both documents to keep them aligned with the code.
 - Self-test, host-delta offset calibration, and on-demand calibration
 - Integer scaling helpers (`ScaleFactor` ratios, no floats); optional `fixed`-point conversions
 - Init-sequence helper macro to reduce boilerplate
+
+QMI8658C is selected by default. QMI8658A-specific behavior is available through
+the `qmi8658a` feature. QMI8658B is not supported because an official vendor
+datasheet was not available for review.
+
+## Device Variant Selection
+
+Use the default dependency for QMI8658C:
+
+```toml
+ph-qmi8658 = "0.1"
+```
+
+Select QMI8658A explicitly:
+
+```toml
+ph-qmi8658 = { version = "0.1", default-features = false, features = ["qmi8658a"] }
+```
+
+`qmi8658a` and `qmi8658c` are mutually exclusive. A no-default-features build
+without either variant retains legacy QMI8658C behavior for v0.1.x source
+compatibility.
 
 ## Usage Examples
 
@@ -64,6 +86,9 @@ let _ = address;
 ```
 
 If `init` or `init_with_addresses` returns `Error::NotReady`, delay briefly and retry.
+Initialization writes the soft-reset command, waits 1 ms, and polls the reset
+completion register for up to 20 ms. A complete window of bus failures returns
+`Error::Bus`.
 
 ### Initialization Macro
 
@@ -101,6 +126,10 @@ let accel = AccelConfig::new(AccelRange::G4, AccelOutputDataRate::Hz250);
 let config = Config::new().with_accel_config(accel).without_gyro();
 imu.set_config(config);
 imu.apply_config().await?;
+
+// DRDY defaults to enabled. This policy survives mode and WoM transitions.
+imu.set_drdy_enabled(false).await?;
+assert!(!imu.drdy_enabled());
 ```
 
 ### Interrupt Routing + Status
@@ -118,6 +147,46 @@ imu.apply_interrupt_config(irq).await?;
 let status = imu.read_interrupt_status().await?;
 let _ = status;
 ```
+
+`with_ctrl9_handshake_statusint(true)` suppresses the external INT1 command
+handshake; it does not change the completion register. The driver always polls
+STATUSINT.bit7 and acknowledges successful commands by writing `0x00` to CTRL9.
+
+FIFO watermark interrupts map to INT2 by default. Opt into INT1 through the
+transport configuration:
+
+```rust
+let i2c_config = I2cConfig::default().with_fifo_int_use_int1(true);
+```
+
+On QMI8658A only, the physical interrupt outputs can be changed from high-Z to
+push-pull:
+
+```rust
+# #[cfg(feature = "qmi8658a")]
+let i2c_config = I2cConfig::default()
+    .with_enable_int1(true)
+    .with_enable_int2(true);
+```
+
+Those builders are unavailable for QMI8658C because CTRL1 bits 4–3 are reserved.
+
+### Internal Pull-Ups
+
+Use `PullUpConfig` to change the vendor-defined IO pull-up groups. The completed
+API performs the CAL1_L write, SET_RPU command, STATUSINT wait, and CTRL9 ACK.
+
+```rust
+use ph_qmi8658::{PullUpConfig, PullUpGroup};
+
+let pull_ups = PullUpConfig::new()
+    .with_group(PullUpGroup::Cs, true)
+    .with_group(PullUpGroup::SclSda, true);
+imu.apply_pull_up_config_with_delay(delay, pull_ups).await?;
+```
+
+The non-delay `apply_pull_up_config` method only starts the asynchronous command;
+call `wait_ctrl9_done` before issuing another CTRL9 command.
 
 ### Raw Data Reads
 
@@ -233,6 +302,9 @@ imu.run_on_demand_calibration(delay).await?;
 let _ = (accel_report, gyro_report, axes, bias);
 ```
 
+Self-test waits two output periods after disabling sensors. Normal CTRL9 waits
+time out after 100 ms; on-demand calibration allows up to 2 seconds.
+
 ### Operating Modes
 
 Switch between accelerometer-only, gyroscope-only, or dual-sensor modes. The driver
@@ -272,10 +344,12 @@ Tested targets include:
 
 | Feature | Description |
 |---------|-------------|
+| `qmi8658c` | Select QMI8658C register behavior; enabled by default |
+| `qmi8658a` | Select QMI8658A behavior, including CTRL1 INT output-enable bits |
 | `defmt` | Enable `defmt::Format` derives on public types for structured logging |
 | `fixed` | Enable fixed-point conversion helpers (`I32F32`) for raw-to-physical-unit math |
 
-No features are enabled by default.
+Do not enable both device-variant features.
 
 ## Testing
 
@@ -284,10 +358,22 @@ parsing, and interrupt/status decoding. Run them with:
 
 ```bash
 cargo test -p ph-qmi8658
+cargo test -p ph-qmi8658 --no-default-features
+cargo test -p ph-qmi8658 --no-default-features --features qmi8658a
 ```
 
 End-to-end hardware validation uses the [`apps/qa-runner`](../../apps/qa-runner/) app on
 ESP32-S3.
+
+The v0.1.2 candidate still requires hardware byte-order verification for
+QMI8658A/C over I2C/SPI with CTRL1.BE set and cleared. No transport-specific
+workaround is applied without reproducible evidence.
+
+## v0.1.1 Compatibility
+
+v0.1.1 `Config` struct literals and exhaustive `Error` matches remain valid.
+DRDY control is an additive driver method rather than a new public `Config`
+field, and reset timeout uses the existing `Error::NotReady` variant.
 
 ## Release Checklist
 

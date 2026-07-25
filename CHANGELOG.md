@@ -2,18 +2,48 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
-- No entries yet.
+## 0.1.2 - Unreleased
 
-## 0.1.2 - 2026-07-25
+### Added
+
+- Added mutually exclusive `qmi8658a` and `qmi8658c` device-variant features.
+  QMI8658C remains the default and legacy no-feature behavior.
+- Added QMI8658A-only INT1/INT2 push-pull output controls.
+- Added common FIFO interrupt mapping controls, preserving INT2 as the default.
+- Added runtime DRDY control that persists across configuration, mode,
+  SyncSample, and Wake-on-Motion transitions.
+- Added typed pull-up resistor configuration for the vendor-defined Aux, SDx,
+  CS, and SCL/SDA groups.
+
 ### Changed
-- Updated pull-up configuration APIs to `apply_pull_up_config*` naming for consistency.
-- Re-exported `PullUpGroup` from the crate root for easier public API access.
-- Switched soft-reset completion polling to explicit `RESET_DONE_REG` / `RESET_DONE` constants.
-- Clarified `SET_RPU` handling so `CAL1_H` remains zeroed for pull-up configuration commands.
 
-### Docs
-- Corrected minor documentation wording and formatting in release-bound updates.
+- Soft reset now waits 1 ms and polls register `0x4D` for exact value `0x80`
+  for up to 20 ms, tolerating transient read failures.
+- CTRL9 completion always polls STATUSINT.bit7 and acknowledges successful
+  commands by writing `0x00` to CTRL9.
+- Normal CTRL9 waits use a 100 ms limit; on-demand calibration allows up to
+  2 seconds.
+- Pull-up configuration writes only the documented CAL1_L payload.
+- Self-test waits two output periods after disabling sensors.
+
+### Fixed
+
+- Restored the v0.1.1 `Config` and `Error` public shapes for patch-release
+  source compatibility.
+- Prevented QMI8658C initialization from writing its reserved CTRL1 bits 4–3.
+- Prevented DRDY disable state from being lost during later CTRL7 writes.
+- Removed the invalid STATUS1.bit0 CmdDone interpretation.
+- Corrected FIFO routing defaults so unchanged applications retain main-branch
+  register behavior.
+
+### Documentation
+
+- Added variant selection, migration, hardware validation, and publishing
+  guidance.
+- Added the vendor datasheets used for the register review and a v0.1.2
+  remediation/status tracker.
+- QMI8658B remains unsupported pending an official vendor datasheet and
+  hardware evidence.
 
 ## 0.1.1 - 2026-02-09
 ### Added

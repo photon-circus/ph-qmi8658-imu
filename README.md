@@ -2,9 +2,10 @@
 
 [![CI](https://github.com/photon-circus/ph-qmi8658-imu/actions/workflows/ci.yml/badge.svg)](https://github.com/photon-circus/ph-qmi8658-imu/actions/workflows/ci.yml) [![Docs.rs](https://docs.rs/ph-qmi8658/badge.svg)](https://docs.rs/ph-qmi8658) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Asynchronous Rust driver for the [QMI8658C](https://www.qstcorp.com/en_comp_prod/QMI8658C)
-6-axis IMU (accelerometer + gyroscope) from QST Corporation, plus ESP32-S3 example
-applications. Built on `embedded-hal-async` for use in `#![no_std]` environments.
+Asynchronous Rust driver for the QMI8658A/C 6-axis IMU (accelerometer +
+gyroscope) from QST Corporation, plus ESP32-S3 example applications. Built on
+`embedded-hal-async` for use in `#![no_std]` environments. QMI8658C is the
+default variant; QMI8658A-specific register behavior is feature-gated.
 
 ## Features
 
@@ -16,6 +17,9 @@ applications. Built on `embedded-hal-async` for use in `#![no_std]` environments
 - Integer scaling helpers (no floats required); optional fixed-point conversions
 - Targets ESP32 (Xtensa & RISC-V) and ARM Cortex-M
 
+QMI8658B is not currently supported because an official vendor datasheet was
+not available for review.
+
 MSRV: **1.92.0** &mdash; [API docs on docs.rs](https://docs.rs/ph-qmi8658)
 
 ## Repository Layout
@@ -25,6 +29,7 @@ MSRV: **1.92.0** &mdash; [API docs on docs.rs](https://docs.rs/ph-qmi8658)
 | [`crates/qmi8658`](crates/qmi8658/) | Driver crate (`ph-qmi8658`) |
 | [`apps/qa-runner`](apps/qa-runner/) | Hardware test runner for ESP32-S3 |
 | [`apps/imu-example`](apps/imu-example/) | FIFO-based example app for ESP32-S3 |
+| [`docs/vendor`](docs/vendor/) | QST datasheets used for register-level review |
 
 ## Documentation
 
@@ -34,6 +39,7 @@ MSRV: **1.92.0** &mdash; [API docs on docs.rs](https://docs.rs/ph-qmi8658)
 - [Changelog](CHANGELOG.md) &mdash; release history
 - [Contributing](CONTRIBUTING.md) &mdash; development setup and PR guidelines
 - [Release Checklist](crates/qmi8658/RELEASE_CHECKLIST.md) &mdash; publish procedures
+- [v0.1.2 Remediation Tracker](V0.1.2_REMEDIATION_PLAN.md) &mdash; release decisions and gates
 - [Security](SECURITY.md) &mdash; vulnerability reporting
 - [Code of Conduct](CODE_OF_CONDUCT.md) &mdash; community standards
 
@@ -43,6 +49,14 @@ Add the dependency:
 ```toml
 [dependencies]
 ph-qmi8658 = "0.1"
+```
+
+This selects QMI8658C. For QMI8658A, disable default features and select the
+variant explicitly:
+
+```toml
+[dependencies]
+ph-qmi8658 = { version = "0.1", default-features = false, features = ["qmi8658a"] }
 ```
 
 Initialize the driver and read sensor data:

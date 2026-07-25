@@ -11,13 +11,36 @@ env:
 jobs:
   lint-test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: qmi8658c
+            args: "--features defmt,fixed"
+          - name: legacy-c
+            args: "--no-default-features"
+          - name: qmi8658a
+            args: "--no-default-features --features qmi8658a,defmt,fixed"
+    name: lint-test (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Test
-        run: cargo test -p ph-qmi8658
+        run: cargo test -p ph-qmi8658 ${{ matrix.args }}
       - name: Clippy
-        run: cargo clippy -p ph-qmi8658
+        run: cargo clippy -p ph-qmi8658 --all-targets ${{ matrix.args }} -- -D warnings
+
+  variant-conflict:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Mutually exclusive variants fail
+        run: |
+          if cargo check -p ph-qmi8658 --no-default-features --features qmi8658a,qmi8658c; then
+            echo "expected mutually exclusive variant features to fail"
+            exit 1
+          fi
 
   build-xtensa:
     runs-on: ubuntu-latest
@@ -34,8 +57,11 @@ jobs:
       - name: Build xtensa targets
         run: |
           cargo +esp build -p ph-qmi8658 --target xtensa-esp32-none-elf -Zbuild-std=core
+          cargo +esp build -p ph-qmi8658 --target xtensa-esp32-none-elf -Zbuild-std=core --no-default-features --features qmi8658a
           cargo +esp build -p ph-qmi8658 --target xtensa-esp32s2-none-elf -Zbuild-std=core
+          cargo +esp build -p ph-qmi8658 --target xtensa-esp32s2-none-elf -Zbuild-std=core --no-default-features --features qmi8658a
           cargo +esp build -p ph-qmi8658 --target xtensa-esp32s3-none-elf -Zbuild-std=core
+          cargo +esp build -p ph-qmi8658 --target xtensa-esp32s3-none-elf -Zbuild-std=core --no-default-features --features qmi8658a
 
   build-cross:
     runs-on: ubuntu-latest
@@ -52,6 +78,12 @@ jobs:
           - thumbv8m.base-none-eabi
           - thumbv8m.main-none-eabi
           - thumbv8m.main-none-eabihf
+        variant:
+          - name: qmi8658c
+            args: ""
+          - name: qmi8658a
+            args: "--no-default-features --features qmi8658a"
+    name: build-cross (${{ matrix.target }}, ${{ matrix.variant.name }})
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -60,7 +92,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Build
-        run: cargo build -p ph-qmi8658 --target ${{ matrix.target }}
+        run: cargo build -p ph-qmi8658 --target ${{ matrix.target }} ${{ matrix.variant.args }}
 
   cargo-deny:
     runs-on: ubuntu-latest
@@ -80,6 +112,6 @@ jobs:
         with:
           toolchain: stable
       - name: Build docs
-        run: cargo doc --manifest-path Cargo.toml --no-deps
+        run: cargo doc --manifest-path Cargo.toml --no-deps --features defmt,fixed
         env:
           RUSTDOCFLAGS: -D warnings
