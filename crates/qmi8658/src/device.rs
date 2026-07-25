@@ -710,6 +710,18 @@ where
         self.interface.read_regs(reg.addr(), buffer).await
     }
 
+    pub(crate) async fn read_register(&mut self, address: u8) -> Result<u8, Error> {
+        self.interface.read_reg(address).await
+    }
+
+    pub(crate) async fn read_registers(
+        &mut self,
+        start_address: u8,
+        buffer: &mut [u8],
+    ) -> Result<(), Error> {
+        self.interface.read_regs(start_address, buffer).await
+    }
+
     pub(crate) async fn write_reg(&mut self, reg: Register, value: u8) -> Result<(), Error> {
         self.interface.write_reg(reg.addr(), value).await
     }

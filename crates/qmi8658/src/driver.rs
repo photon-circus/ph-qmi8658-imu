@@ -187,6 +187,27 @@ where
         self.core.verify_device().await
     }
 
+    /// Reads one register by its raw address.
+    ///
+    /// This read-only diagnostic API is intended for hardware qualification,
+    /// register snapshots, and support for vendor registers not otherwise
+    /// exposed by the typed driver API.
+    pub async fn read_register(&mut self, address: u8) -> Result<u8, Error> {
+        self.core.read_register(address).await
+    }
+
+    /// Reads consecutive registers beginning at a raw address.
+    ///
+    /// Address auto-increment must be enabled in the selected I2C/SPI
+    /// interface configuration for multi-byte reads.
+    pub async fn read_registers(
+        &mut self,
+        start_address: u8,
+        buffer: &mut [u8],
+    ) -> Result<(), Error> {
+        self.core.read_registers(start_address, buffer).await
+    }
+
     /// Applies the current sensor configuration to the device.
     pub async fn apply_config(&mut self) -> Result<(), Error> {
         // Ordering: disable sensors (CTRL7=0), write CTRL1/2/3/5, then re-enable via CTRL7.
@@ -750,6 +771,32 @@ mod tests {
     use crate::register::{Register, status_int};
     use crate::testing::{MockDelay, MockInterface};
     use futures::executor::block_on;
+
+    #[test]
+    fn diagnostic_register_reads_return_raw_bytes() {
+        let mut interface = MockInterface::default();
+        interface.set_reg(Register::WhoAmI.addr(), 0x05);
+        interface.set_reg(Register::RevisionId.addr(), 0x7c);
+        interface.set_reg(Register::Ctrl1.addr(), 0x60);
+        let config = Config::new();
+        let settings = InterfaceSettings::new(true, true, false, false, false, false);
+        let core = DeviceCore::new(interface, config, settings);
+        let mut driver: Qmi8658<MockInterface, (), ()> = Qmi8658 {
+            core,
+            int1: None,
+            int2: None,
+        };
+
+        assert_eq!(
+            block_on(driver.read_register(Register::WhoAmI.addr())).expect("single register"),
+            0x05
+        );
+
+        let mut identity = [0u8; 3];
+        block_on(driver.read_registers(Register::WhoAmI.addr(), &mut identity))
+            .expect("register block");
+        assert_eq!(identity, [0x05, 0x7c, 0x60]);
+    }
 
     #[test]
     fn apply_fifo_config_writes_fifo_registers() {
