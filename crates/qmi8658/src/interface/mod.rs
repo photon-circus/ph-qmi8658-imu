@@ -34,14 +34,27 @@ pub(crate) struct InterfaceSettings {
     pub(crate) auto_increment: bool,
     pub(crate) big_endian: bool,
     pub(crate) spi_3_wire: bool,
+    pub(crate) enable_int1: bool,
+    pub(crate) enable_int2: bool,
+    pub(crate) fifo_int_use_int1: bool,
 }
 
 impl InterfaceSettings {
-    pub(crate) const fn new(auto_increment: bool, big_endian: bool, spi_3_wire: bool) -> Self {
+    pub(crate) const fn new(
+        auto_increment: bool,
+        big_endian: bool,
+        spi_3_wire: bool,
+        enable_int1: bool,
+        enable_int2: bool,
+        fifo_int_use_int1: bool,
+    ) -> Self {
         Self {
             auto_increment,
             big_endian,
             spi_3_wire,
+            enable_int1,
+            enable_int2,
+            fifo_int_use_int1,
         }
     }
 
@@ -56,12 +69,77 @@ impl InterfaceSettings {
         if self.big_endian {
             value |= ctrl1::BE;
         }
+        #[cfg(feature = "qmi8658a")]
+        {
+            if self.enable_int1 {
+                value |= ctrl1::INT1_EN;
+            }
+            if self.enable_int2 {
+                value |= ctrl1::INT2_EN;
+            }
+        }
+        if self.fifo_int_use_int1 {
+            value |= ctrl1::FIFO_INT_SEL;
+        }
         value
     }
 }
 
 impl Default for InterfaceSettings {
     fn default() -> Self {
-        Self::new(true, true, false)
+        Self::new(true, true, false, false, false, false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{I2cConfig, SpiConfig};
+    use crate::register::ctrl1;
+
+    #[test]
+    fn interface_defaults_match_main_ctrl1() {
+        assert_eq!(
+            I2cConfig::default().interface_settings().ctrl1_value(),
+            0x60
+        );
+        assert_eq!(
+            SpiConfig::default().interface_settings().ctrl1_value(),
+            0x60
+        );
+        assert_eq!(
+            I2cConfig::default().interface_settings().ctrl1_value() & ctrl1::RESERVED_MASK,
+            0
+        );
+    }
+
+    #[test]
+    fn fifo_interrupt_can_be_mapped_to_int1() {
+        assert_eq!(
+            I2cConfig::default()
+                .with_fifo_int_use_int1(true)
+                .interface_settings()
+                .ctrl1_value(),
+            0x64
+        );
+        assert_eq!(
+            SpiConfig::default()
+                .with_fifo_int_use_int1(true)
+                .interface_settings()
+                .ctrl1_value(),
+            0x64
+        );
+    }
+
+    #[cfg(feature = "qmi8658a")]
+    #[test]
+    fn qmi8658a_interrupt_output_enable_bits_are_explicit() {
+        assert_eq!(
+            I2cConfig::default()
+                .with_enable_int1(true)
+                .with_enable_int2(true)
+                .interface_settings()
+                .ctrl1_value(),
+            0x78
+        );
     }
 }

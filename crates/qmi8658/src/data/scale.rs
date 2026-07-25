@@ -84,9 +84,6 @@ mod tests {
     #[test]
     fn temperature_scale_values() {
         assert_eq!(temperature_lsb_per_celsius(), 256);
-        assert_eq!(
-            temperature_mdegc_per_lsb(),
-            ScaleFactor::new(1000, 256)
-        );
+        assert_eq!(temperature_mdegc_per_lsb(), ScaleFactor::new(1000, 256));
     }
 }

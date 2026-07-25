@@ -11,16 +11,56 @@ env:
 jobs:
   lint-test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: qmi8658c
+            test_args: "--features fixed"
+            check_args: "--features defmt,fixed"
+          - name: legacy-c
+            test_args: "--no-default-features"
+            check_args: "--no-default-features"
+          - name: qmi8658a
+            test_args: "--no-default-features --features qmi8658a,fixed"
+            check_args: "--no-default-features --features qmi8658a,defmt,fixed"
+    name: lint-test (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Test
-        run: cargo test -p ph-qmi8658
+        run: cargo test -p ph-qmi8658 ${{ matrix.test_args }}
       - name: Clippy
-        run: cargo clippy -p ph-qmi8658
+        run: cargo clippy -p ph-qmi8658 --all-targets ${{ matrix.check_args }} -- -D warnings
+
+  variant-conflict:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Mutually exclusive variants fail
+        run: |
+          if cargo check -p ph-qmi8658 --no-default-features --features qmi8658a,qmi8658c; then
+            echo "expected mutually exclusive variant features to fail"
+            exit 1
+          fi
 
   build-xtensa:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - chip: esp32
+            buildtarget: esp32
+            target: xtensa-esp32-none-elf
+          - chip: esp32-s2
+            buildtarget: esp32s2
+            target: xtensa-esp32s2-none-elf
+          - chip: esp32-s3
+            buildtarget: esp32s3
+            target: xtensa-esp32s3-none-elf
+    name: build-xtensa (${{ matrix.chip }})
     steps:
       - uses: actions/checkout@v4
       - uses: esp-rs/xtensa-toolchain@v1.5
@@ -28,39 +68,80 @@ jobs:
           default: true
           version: "latest"
           ldproxy: true
-          buildtargets: "esp32,esp32s2,esp32s3"
+          buildtargets: ${{ matrix.buildtarget }}
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
-      - name: Build xtensa targets
+      - name: Build QMI8658C
+        run: cargo +esp build -p ph-qmi8658 --target ${{ matrix.target }} -Zbuild-std=core --features defmt,fixed
+      - name: Build QMI8658A
+        run: cargo +esp build -p ph-qmi8658 --target ${{ matrix.target }} -Zbuild-std=core --no-default-features --features qmi8658a,defmt,fixed
+      - name: Build hardware evidence firmware matrix
+        if: matrix.chip == 'esp32-s3'
+        working-directory: apps/qa-runner
         run: |
-          cargo +esp build -p ph-qmi8658 --target xtensa-esp32-none-elf -Zbuild-std=core
-          cargo +esp build -p ph-qmi8658 --target xtensa-esp32s2-none-elf -Zbuild-std=core
-          cargo +esp build -p ph-qmi8658 --target xtensa-esp32s3-none-elf -Zbuild-std=core
+          for features in \
+            qmi8658c,transport-i2c \
+            qmi8658c,transport-i2c,big-endian \
+            qmi8658c,transport-spi \
+            qmi8658c,transport-spi,big-endian \
+            qmi8658a,transport-i2c \
+            qmi8658a,transport-i2c,big-endian \
+            qmi8658a,transport-spi \
+            qmi8658a,transport-spi,big-endian
+          do
+            cargo +esp build --no-default-features --features "$features"
+          done
+      - name: Build IMU example
+        if: matrix.chip == 'esp32-s3'
+        working-directory: apps/imu-example
+        run: cargo +esp build
 
   build-cross:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - riscv32imc-unknown-none-elf
-          - riscv32imac-unknown-none-elf
-          - thumbv6m-none-eabi
-          - thumbv7m-none-eabi
-          - thumbv7em-none-eabi
-          - thumbv7em-none-eabihf
-          - thumbv8m.base-none-eabi
-          - thumbv8m.main-none-eabi
-          - thumbv8m.main-none-eabihf
+        # This driver is HAL/PAC-independent. Each row verifies the CPU/ABI
+        # target shared by the representative MCU families in its name.
+        platform:
+          - name: esp32-c2-c3
+            target: riscv32imc-unknown-none-elf
+          - name: esp32-c5-c6-c61-h2-rp2350-riscv
+            target: riscv32imac-unknown-none-elf
+          - name: esp32-p4
+            target: riscv32imafc-unknown-none-elf
+          - name: rp2040-stm32f0-g0-l0-nrf51-samd21
+            target: thumbv6m-none-eabi
+          - name: stm32f1-f2-l1-sam3-sam4
+            target: thumbv7m-none-eabi
+          - name: stm32f3-l4-cortex-m4
+            target: thumbv7em-none-eabi
+          - name: stm32f4-f7-h7-nrf52-samd51
+            target: thumbv7em-none-eabihf
+          - name: saml10-l11-cortex-m23
+            target: thumbv8m.base-none-eabi
+          - name: cortex-m33-soft-float
+            target: thumbv8m.main-none-eabi
+          - name: rp2350-arm-stm32h5-l5-u5-nrf53-54-lpc55
+            target: thumbv8m.main-none-eabihf
+        variant:
+          - name: qmi8658c
+            args: "--features defmt,fixed"
+          - name: qmi8658a
+            args: "--no-default-features --features qmi8658a,defmt,fixed"
+    name: build-cross (${{ matrix.platform.name }}, ${{ matrix.variant.name }})
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.platform.target }}
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Build
-        run: cargo build -p ph-qmi8658 --target ${{ matrix.target }}
+        run: |
+          cargo build -p ph-qmi8658 \
+            --target ${{ matrix.platform.target }} \
+            ${{ matrix.variant.args }}
 
   cargo-deny:
     runs-on: ubuntu-latest
@@ -71,6 +152,16 @@ jobs:
           command: check
           manifest-path: crates/qmi8658/Cargo.toml
 
+  hardware-evidence-tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test evidence parser and release gate
+        run: python -m unittest discover -s apps/qa-runner/tools -p "test_*.py" -v
+
   doc:
     runs-on: ubuntu-latest
     steps:
@@ -80,6 +171,6 @@ jobs:
         with:
           toolchain: stable
       - name: Build docs
-        run: cargo doc --manifest-path Cargo.toml --no-deps
+        run: cargo doc --manifest-path Cargo.toml --no-deps --features defmt,fixed
         env:
           RUSTDOCFLAGS: -D warnings

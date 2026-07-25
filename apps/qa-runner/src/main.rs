@@ -7,43 +7,58 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+#[cfg(all(feature = "qmi8658a", feature = "qmi8658c"))]
+compile_error!("features `qmi8658a` and `qmi8658c` are mutually exclusive");
+#[cfg(not(any(feature = "qmi8658a", feature = "qmi8658c")))]
+compile_error!("select exactly one sensor variant: `qmi8658a` or `qmi8658c`");
+#[cfg(all(feature = "transport-i2c", feature = "transport-spi"))]
+compile_error!("features `transport-i2c` and `transport-spi` are mutually exclusive");
+#[cfg(not(any(feature = "transport-i2c", feature = "transport-spi")))]
+compile_error!("select exactly one transport: `transport-i2c` or `transport-spi`");
+
 use defmt::{error, info, warn};
 use embassy_executor::Spawner;
 use embassy_time::{Delay, Duration, Timer};
+#[cfg(feature = "transport-spi")]
+use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{Input, InputConfig, Pull};
+#[cfg(feature = "transport-spi")]
+use esp_hal::gpio::{Level, Output, OutputConfig};
+#[cfg(feature = "transport-i2c")]
 use esp_hal::i2c::master::{Config as I2cConfig, I2c};
-use esp_hal::timer::timg::TimerGroup;
-use esp_hal::time::Rate;
-use ph_qmi8658::{
-    AccelConfig,
-    AccelOutputDataRate,
-    AccelRange,
-    Config,
-    Error as ImuError,
-    FifoConfig,
-    FifoMode,
-    FifoSize,
-    GyroConfig,
-    GyroOutputDataRate,
-    GyroRange,
-    InterruptConfig,
-    InterruptPin,
-    OperatingMode,
-    Qmi8658Address,
-    Qmi8658I2c,
-    WomConfig,
-    WomInterruptLevel,
+#[cfg(feature = "transport-spi")]
+use esp_hal::spi::{
+    Mode,
+    master::{Config as SpiBusConfig, Spi},
 };
+use esp_hal::time::Rate;
+use esp_hal::timer::timg::TimerGroup;
+#[cfg(feature = "transport-spi")]
+use ph_qmi8658::Qmi8658Spi;
+use ph_qmi8658::{
+    AccelConfig, AccelOutputDataRate, AccelRange, Config, Error as ImuError, FifoConfig, FifoMode,
+    FifoSize, GyroConfig, GyroOutputDataRate, GyroRange, InterruptConfig, InterruptPin,
+    OperatingMode, WomConfig, WomInterruptLevel,
+};
+#[cfg(feature = "transport-i2c")]
+use ph_qmi8658::{Qmi8658Address, Qmi8658I2c};
 use {esp_backtrace as _, esp_println as _};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
-type ImuI2c = I2c<'static, esp_hal::Async>;
 type ImuPin = Input<'static>;
+#[cfg(feature = "transport-i2c")]
+type ImuI2c = I2c<'static, esp_hal::Async>;
+#[cfg(feature = "transport-i2c")]
 type ImuDriver = Qmi8658I2c<ImuI2c, ImuPin, ImuPin>;
-type SelfTestErr =
-    ph_qmi8658::SelfTestError<<ImuPin as embedded_hal::digital::ErrorType>::Error>;
+#[cfg(feature = "transport-spi")]
+type ImuSpiBus = Spi<'static, esp_hal::Async>;
+#[cfg(feature = "transport-spi")]
+type ImuSpiDevice = ExclusiveDevice<ImuSpiBus, Output<'static>, Delay>;
+#[cfg(feature = "transport-spi")]
+type ImuDriver = Qmi8658Spi<ImuSpiDevice, ImuPin, ImuPin>;
+type SelfTestErr = ph_qmi8658::SelfTestError<<ImuPin as embedded_hal::digital::ErrorType>::Error>;
 
 defmt::timestamp!("{=u64:ms}", 0u64);
 
@@ -51,6 +66,15 @@ defmt::timestamp!("{=u64:ms}", 0u64);
 static APP_DESC_REF: &esp_bootloader_esp_idf::EspAppDesc = &ESP_APP_DESC;
 
 const BOARD_NAME: &str = "ESP32-S3 Matrix Board";
+#[cfg(feature = "qmi8658a")]
+const SENSOR_VARIANT: &str = "qmi8658a";
+#[cfg(feature = "qmi8658c")]
+const SENSOR_VARIANT: &str = "qmi8658c";
+#[cfg(feature = "transport-i2c")]
+const TRANSPORT: &str = "i2c";
+#[cfg(feature = "transport-spi")]
+const TRANSPORT: &str = "spi";
+const BIG_ENDIAN: bool = cfg!(feature = "big-endian");
 
 const RETRY_LIMIT: u8 = 5;
 const RETRY_DELAY_MS: u64 = 20;
@@ -60,6 +84,8 @@ const FIFO_READY_RETRY_LIMIT: u16 = 20;
 const FIFO_READY_DELAY_MS: u64 = 10;
 const STREAM_SAMPLE_COUNT: usize = 5;
 const STREAM_SAMPLE_DELAY_MS: u64 = 5;
+const EVIDENCE_DIRECT_SAMPLE_COUNT: usize = 16;
+const EVIDENCE_FIFO_BUFFER_LEN: usize = 192;
 
 async fn reset_fifo_retry(imu: &mut ImuDriver, delay: &mut Delay) -> Result<(), ImuError> {
     for _ in 0..RETRY_LIMIT {
@@ -162,17 +188,13 @@ async fn disable_wom_retry(imu: &mut ImuDriver, delay: &mut Delay) -> Result<(),
     Err(ImuError::NotReady)
 }
 
-async fn wait_for_data_ready(
-    imu: &mut ImuDriver,
-    accel: bool,
-    gyro: bool,
-) -> Result<(), ImuError> {
+async fn wait_for_data_ready(imu: &mut ImuDriver, accel: bool, gyro: bool) -> Result<(), ImuError> {
     if !accel && !gyro {
         return Ok(());
     }
 
     let (retries, delay_ms) = if let Some(period_ns) = imu.sample_period_ns() {
-        let period_ms = (u64::from(period_ns) + 999_999) / 1_000_000;
+        let period_ms = u64::from(period_ns).div_ceil(1_000_000);
         let window_ms = (period_ms.saturating_mul(5)).clamp(20, 2_000);
         let delay_ms = DATA_READY_DELAY_MS.max(1);
         let retries = (window_ms / delay_ms).max(1);
@@ -207,10 +229,7 @@ async fn wait_for_data_ready(
     if let Some(status) = last_status {
         warn!(
             "data-ready status timeout: avail={} locked={} accel_ready={} gyro_ready={}",
-            status.data_available,
-            status.data_locked,
-            status.accel_ready,
-            status.gyro_ready
+            status.data_available, status.data_locked, status.accel_ready, status.gyro_ready
         );
     }
 
@@ -273,6 +292,146 @@ async fn stream_raw_blocks(imu: &mut ImuDriver) -> Result<(), ImuError> {
     Ok(())
 }
 
+fn decode_i16(bytes: [u8; 2]) -> i16 {
+    if BIG_ENDIAN {
+        i16::from_be_bytes(bytes)
+    } else {
+        i16::from_le_bytes(bytes)
+    }
+}
+
+fn print_direct_record(index: usize, bytes: &[u8; 17]) {
+    let timestamp = u32::from(bytes[0]) | (u32::from(bytes[1]) << 8) | (u32::from(bytes[2]) << 16);
+    let temperature = decode_i16([bytes[3], bytes[4]]);
+    let accel_x = decode_i16([bytes[5], bytes[6]]);
+    let accel_y = decode_i16([bytes[7], bytes[8]]);
+    let accel_z = decode_i16([bytes[9], bytes[10]]);
+    let gyro_x = decode_i16([bytes[11], bytes[12]]);
+    let gyro_y = decode_i16([bytes[13], bytes[14]]);
+    let gyro_z = decode_i16([bytes[15], bytes[16]]);
+
+    esp_println::println!(
+        "QMI_EVIDENCE_DIRECT index={} raw={:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x} timestamp={} temp={} ax={} ay={} az={} gx={} gy={} gz={}",
+        index,
+        bytes[0],
+        bytes[1],
+        bytes[2],
+        bytes[3],
+        bytes[4],
+        bytes[5],
+        bytes[6],
+        bytes[7],
+        bytes[8],
+        bytes[9],
+        bytes[10],
+        bytes[11],
+        bytes[12],
+        bytes[13],
+        bytes[14],
+        bytes[15],
+        bytes[16],
+        timestamp,
+        temperature,
+        accel_x,
+        accel_y,
+        accel_z,
+        gyro_x,
+        gyro_y,
+        gyro_z
+    );
+}
+
+fn print_fifo_record(index: usize, bytes: &[u8]) {
+    if bytes.len() < 12 {
+        return;
+    }
+    let accel_x = decode_i16([bytes[0], bytes[1]]);
+    let accel_y = decode_i16([bytes[2], bytes[3]]);
+    let accel_z = decode_i16([bytes[4], bytes[5]]);
+    let gyro_x = decode_i16([bytes[6], bytes[7]]);
+    let gyro_y = decode_i16([bytes[8], bytes[9]]);
+    let gyro_z = decode_i16([bytes[10], bytes[11]]);
+
+    esp_println::println!(
+        "QMI_EVIDENCE_FIFO index={} raw={:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x} ax={} ay={} az={} gx={} gy={} gz={}",
+        index,
+        bytes[0],
+        bytes[1],
+        bytes[2],
+        bytes[3],
+        bytes[4],
+        bytes[5],
+        bytes[6],
+        bytes[7],
+        bytes[8],
+        bytes[9],
+        bytes[10],
+        bytes[11],
+        accel_x,
+        accel_y,
+        accel_z,
+        gyro_x,
+        gyro_y,
+        gyro_z
+    );
+}
+
+async fn run_be_evidence(imu: &mut ImuDriver, delay: &mut Delay) -> Result<(), ImuError> {
+    let who_am_i = imu.read_register(0x00).await?;
+    let revision_id = imu.read_register(0x01).await?;
+    let ctrl1 = imu.read_register(0x02).await?;
+    esp_println::println!(
+        "QMI_EVIDENCE_META who_am_i={:02x} revision_id={:02x} ctrl1={:02x}",
+        who_am_i,
+        revision_id,
+        ctrl1
+    );
+
+    wait_for_data_ready(imu, true, true).await?;
+    for index in 0..EVIDENCE_DIRECT_SAMPLE_COUNT {
+        let mut bytes = [0u8; 17];
+        imu.read_registers(0x30, &mut bytes).await?;
+        print_direct_record(index, &bytes);
+        Timer::after(Duration::from_millis(STREAM_SAMPLE_DELAY_MS)).await;
+    }
+
+    let fifo = FifoConfig::new(FifoMode::Stream, FifoSize::Samples32, 8);
+    imu.apply_fifo_config(fifo).await?;
+    reset_fifo_retry(imu, delay).await?;
+    wait_for_fifo_ready(imu).await?;
+
+    let mut fifo_bytes = [0u8; EVIDENCE_FIFO_BUFFER_LEN];
+    let mut readout = None;
+    for _ in 0..RETRY_LIMIT {
+        match imu.read_fifo_burst(delay, &mut fifo_bytes).await {
+            Ok(value) => {
+                readout = Some(value);
+                break;
+            }
+            Err(ImuError::NotReady) => {
+                Timer::after(Duration::from_millis(RETRY_DELAY_MS)).await;
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    let readout = readout.ok_or(ImuError::NotReady)?;
+    esp_println::println!(
+        "QMI_EVIDENCE_FIFO_META bytes_read={} sample_count_bytes={} overflow={}",
+        readout.bytes_read,
+        readout.status.sample_count_bytes,
+        u8::from(readout.status.overflow)
+    );
+    for (index, frame) in fifo_bytes[..readout.bytes_read]
+        .chunks_exact(12)
+        .enumerate()
+    {
+        print_fifo_record(index, frame);
+    }
+
+    imu.apply_fifo_config(FifoConfig::default()).await?;
+    Ok(())
+}
+
 async fn copy_gyro_bias_and_read_retry(
     imu: &mut ImuDriver,
     delay: &mut Delay,
@@ -317,9 +476,7 @@ impl GroupReport {
         } else {
             warn!(
                 "group {}: {} passed, {} failed",
-                self.name,
-                self.passed,
-                self.failed
+                self.name, self.passed, self.failed
             );
         }
     }
@@ -485,18 +642,25 @@ async fn run_workflows(imu: &mut ImuDriver) -> GroupReport {
 async fn run_fifo(imu: &mut ImuDriver, delay: &mut Delay) -> GroupReport {
     let mut report = GroupReport::new("fifo");
     let fifo = FifoConfig::new(FifoMode::Stream, FifoSize::Samples32, 8);
-    report.record(run_case("apply_fifo_config", async { imu.apply_fifo_config(fifo).await }).await);
     report.record(
-        run_case("reset_fifo", async { reset_fifo_retry(imu, delay).await }).await,
+        run_case("apply_fifo_config", async {
+            imu.apply_fifo_config(fifo).await
+        })
+        .await,
+    );
+    report.record(run_case("reset_fifo", async { reset_fifo_retry(imu, delay).await }).await);
+    report.record(run_case("wait_fifo_ready", async { wait_for_fifo_ready(imu).await }).await);
+    report.record(
+        run_case("read_fifo_manual", async {
+            read_fifo_manual(imu, delay).await
+        })
+        .await,
     );
     report.record(
-        run_case("wait_fifo_ready", async { wait_for_fifo_ready(imu).await }).await,
-    );
-    report.record(
-        run_case("read_fifo_manual", async { read_fifo_manual(imu, delay).await }).await,
-    );
-    report.record(
-        run_case("wait_fifo_ready_after_manual", async { wait_for_fifo_ready(imu).await }).await,
+        run_case("wait_fifo_ready_after_manual", async {
+            wait_for_fifo_ready(imu).await
+        })
+        .await,
     );
     report.record(
         run_case("read_fifo_burst", async {
@@ -630,11 +794,27 @@ async fn main(_spawner: Spawner) -> ! {
     esp_rtos::start(timg0.timer0);
 
     info!("IMU hardware test runner starting ({})", BOARD_NAME);
+    esp_println::println!(
+        "QMI_EVIDENCE_BEGIN schema=1 variant={} transport={} be={} orientation=z-up direct_samples={} fifo_buffer_bytes={}",
+        SENSOR_VARIANT,
+        TRANSPORT,
+        u8::from(BIG_ENDIAN),
+        EVIDENCE_DIRECT_SAMPLE_COUNT,
+        EVIDENCE_FIFO_BUFFER_LEN
+    );
 
-    let int1 = Input::new(peripherals.GPIO10, InputConfig::default().with_pull(Pull::Up));
-    let int2 = Input::new(peripherals.GPIO13, InputConfig::default().with_pull(Pull::Up));
+    let int1 = Input::new(
+        peripherals.GPIO10,
+        InputConfig::default().with_pull(Pull::Up),
+    );
+    let int2 = Input::new(
+        peripherals.GPIO13,
+        InputConfig::default().with_pull(Pull::Up),
+    );
 
+    #[cfg(feature = "transport-i2c")]
     let i2c_config = I2cConfig::default().with_frequency(Rate::from_khz(400));
+    #[cfg(feature = "transport-i2c")]
     let i2c = I2c::new(peripherals.I2C0, i2c_config)
         .unwrap()
         .with_sda(peripherals.GPIO11)
@@ -643,18 +823,56 @@ async fn main(_spawner: Spawner) -> ! {
 
     let mut delay = Delay;
     let config = Config::new();
-    let i2c_config = ph_qmi8658::I2cConfig::new(Qmi8658Address::Primary.addr());
-    let mut imu = Qmi8658I2c::with_i2c_config(i2c, Some(int1), Some(int2), config, i2c_config);
-    match imu
+
+    #[cfg(feature = "transport-i2c")]
+    let mut imu = {
+        let interface_config =
+            ph_qmi8658::I2cConfig::new(Qmi8658Address::Primary.addr()).with_big_endian(BIG_ENDIAN);
+        Qmi8658I2c::with_i2c_config(i2c, Some(int1), Some(int2), config, interface_config)
+    };
+
+    #[cfg(feature = "transport-spi")]
+    let mut imu = {
+        let spi_bus_config = SpiBusConfig::default()
+            .with_frequency(Rate::from_khz(1_000))
+            .with_mode(Mode::_0);
+        let spi = Spi::new(peripherals.SPI2, spi_bus_config)
+            .unwrap()
+            .with_sck(peripherals.GPIO12)
+            .with_mosi(peripherals.GPIO11)
+            .with_miso(peripherals.GPIO14)
+            .into_async();
+        let cs = Output::new(peripherals.GPIO9, Level::High, OutputConfig::default());
+        let device = ExclusiveDevice::new(spi, cs, Delay).unwrap();
+        let interface_config = ph_qmi8658::SpiConfig::new().with_big_endian(BIG_ENDIAN);
+        Qmi8658Spi::with_spi_config(device, Some(int1), Some(int2), config, interface_config)
+    };
+
+    #[cfg(feature = "transport-i2c")]
+    let init_result = imu
         .init_with_addresses(
             &mut delay,
-            &[Qmi8658Address::Primary.addr(), Qmi8658Address::Secondary.addr()],
+            &[
+                Qmi8658Address::Primary.addr(),
+                Qmi8658Address::Secondary.addr(),
+            ],
         )
         .await
-    {
-        Ok(address) => info!("IMU init ok @0x{:02x}", address),
+        .map(|address| {
+            info!("IMU init ok @0x{:02x}", address);
+        });
+
+    #[cfg(feature = "transport-spi")]
+    let init_result = imu.init(&mut delay).await.map(|()| {
+        info!("IMU SPI init ok");
+    });
+
+    match init_result {
+        Ok(()) => {}
         Err(err) => {
             error!("IMU init failed: {}", err);
+            esp_println::println!("QMI_EVIDENCE_ERROR stage=init error={:?}", err);
+            esp_println::println!("QMI_EVIDENCE_END result=fail");
             loop {
                 Timer::after(Duration::from_secs(1)).await;
             }
@@ -668,6 +886,17 @@ async fn main(_spawner: Spawner) -> ! {
 
     if let Err(err) = apply_default_config(&mut imu).await {
         error!("apply_config failed: {}", err);
+    }
+
+    match run_be_evidence(&mut imu, &mut delay).await {
+        Ok(()) => {
+            esp_println::println!("QMI_EVIDENCE_END result=pass");
+        }
+        Err(err) => {
+            warn!("BE evidence collection failed: {}", err);
+            esp_println::println!("QMI_EVIDENCE_ERROR stage=collection error={:?}", err);
+            esp_println::println!("QMI_EVIDENCE_END result=fail");
+        }
     }
 
     let mut total_passed = 0u32;
@@ -731,8 +960,7 @@ async fn main(_spawner: Spawner) -> ! {
 
     info!(
         "hardware tests complete: {} passed, {} failed",
-        total_passed,
-        total_failed
+        total_passed, total_failed
     );
 
     loop {

@@ -9,10 +9,18 @@ rust-version = "1.92.0"
 name = "imu-hw-tests"
 path = "./src/main.rs"
 
+[features]
+default = ["qmi8658c", "transport-i2c", "big-endian"]
+qmi8658a = ["ph-qmi8658/qmi8658a"]
+qmi8658c = ["ph-qmi8658/qmi8658c"]
+transport-i2c = []
+transport-spi = ["dep:embedded-hal-bus"]
+big-endian = []
+
 [dependencies]
 esp-hal = { version = "~1.0", features = ["defmt", "esp32s3", "unstable"] }
 esp-rtos = { version = "0.2.0", features = ["defmt", "embassy", "esp32s3"] }
-defmt = "1.0.1"
+defmt = "1.1.1"
 esp-bootloader-esp-idf = { version = "0.4.0", features = ["defmt", "esp32s3"] }
 embassy-executor = { version = "0.9.1", features = ["defmt"] }
 embassy-time = { version = "0.5.0", features = ["defmt"] }
@@ -21,7 +29,8 @@ esp-println = { version = "0.16.1", features = ["defmt-espflash", "esp32s3"] }
 critical-section = "1.2.0"
 embedded-hal-async = { version = "1.0.0", default-features = false }
 embedded-hal = { version = "1.0.0", default-features = false }
-ph-qmi8658 = { path = "../../crates/qmi8658", features = ["defmt"] }
+embedded-hal-bus = { version = "0.3.0", features = ["async"], optional = true }
+ph-qmi8658 = { path = "../../crates/qmi8658", default-features = false, features = ["defmt"] }
 
 [profile.dev]
 # Rust debug is too slow.

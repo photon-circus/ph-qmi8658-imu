@@ -17,11 +17,10 @@ use crate::interface::Interface;
 use crate::interface::{I2cConfig, I2cInterface};
 use crate::interface::{SpiConfig, SpiInterface};
 use crate::interrupt::{InterruptConfig, InterruptStatus, InterruptWaitError};
+use crate::pull::PullUpConfig;
 use crate::register::Register;
 use crate::self_test::{SelfTestError, SelfTestReport};
 use crate::wom::WomConfig;
-
-const SELF_TEST_DELAY_NS: u32 = 1_000_000;
 
 /// QMI8658 6-axis IMU driver.
 pub struct Qmi8658<I, INT1 = (), INT2 = ()> {
@@ -150,6 +149,19 @@ where
         self.core.sync_sample_enabled()
     }
 
+    /// Returns whether Data Ready output is requested in non-SyncSample modes.
+    pub fn drdy_enabled(&self) -> bool {
+        self.core.drdy_enabled()
+    }
+
+    /// Enables or disables the Data Ready output in non-SyncSample modes.
+    ///
+    /// SyncSample mode always routes DRDY to INT2 as required by the device.
+    /// The requested value is retained and restored when SyncSample is disabled.
+    pub async fn set_drdy_enabled(&mut self, enable: bool) -> Result<(), Error> {
+        self.core.set_drdy_enabled(enable).await
+    }
+
     /// Enables or disables sync sample mode.
     pub async fn set_sync_sample(&mut self, enable: bool) -> Result<(), Error> {
         self.core.set_sync_sample(enable).await
@@ -175,10 +187,47 @@ where
         self.core.verify_device().await
     }
 
+    /// Reads one register by its raw address.
+    ///
+    /// This read-only diagnostic API is intended for hardware qualification,
+    /// register snapshots, and support for vendor registers not otherwise
+    /// exposed by the typed driver API.
+    pub async fn read_register(&mut self, address: u8) -> Result<u8, Error> {
+        self.core.read_register(address).await
+    }
+
+    /// Reads consecutive registers beginning at a raw address.
+    ///
+    /// Address auto-increment must be enabled in the selected I2C/SPI
+    /// interface configuration for multi-byte reads.
+    pub async fn read_registers(
+        &mut self,
+        start_address: u8,
+        buffer: &mut [u8],
+    ) -> Result<(), Error> {
+        self.core.read_registers(start_address, buffer).await
+    }
+
     /// Applies the current sensor configuration to the device.
     pub async fn apply_config(&mut self) -> Result<(), Error> {
         // Ordering: disable sensors (CTRL7=0), write CTRL1/2/3/5, then re-enable via CTRL7.
         self.core.apply_config().await
+    }
+
+    /// Applies the pull-up resistor configuration (CAL1_L + CTRL9 command).
+    pub async fn apply_pull_up_config(&mut self, config: PullUpConfig) -> Result<(), Error> {
+        self.core.apply_pull_up_config(config).await
+    }
+
+    /// Applies the pull-up resistor configuration and waits for CTRL9 command completion.
+    pub async fn apply_pull_up_config_with_delay<D: DelayNs>(
+        &mut self,
+        delay: &mut D,
+        config: PullUpConfig,
+    ) -> Result<(), Error> {
+        self.core
+            .apply_pull_up_config_with_delay(delay, config)
+            .await
     }
 
     /// Applies the interrupt routing and enable configuration (CTRL8).
@@ -553,7 +602,9 @@ where
         let ctrl2_off = accel.ctrl2_value_with_self_test(false);
 
         self.core.write_reg(Register::Ctrl7, 0).await?;
-        delay.delay_ns(SELF_TEST_DELAY_NS).await;
+        delay
+            .delay_ns(self.core.t6_ns_from_odr_milli(accel.odr.hz_milli()))
+            .await;
         self.core.write_reg(Register::Ctrl2, ctrl2_st).await?;
 
         if let Err(err) = self.wait_int2_high().await {
@@ -591,7 +642,9 @@ where
         let ctrl3_off = gyro.ctrl3_value_with_self_test(false);
 
         self.core.write_reg(Register::Ctrl7, 0).await?;
-        delay.delay_ns(SELF_TEST_DELAY_NS).await;
+        delay
+            .delay_ns(self.core.t6_ns_from_odr_milli(gyro.odr.hz_milli()))
+            .await;
         self.core.write_reg(Register::Ctrl3, ctrl3_st).await?;
 
         if let Err(err) = self.wait_int2_high().await {
@@ -714,15 +767,42 @@ mod tests {
     use crate::data::{FifoConfig, FifoMode, FifoSize};
     use crate::interface::InterfaceSettings;
     use crate::interrupt::{InterruptConfig, InterruptPin};
-    use crate::register::Register;
-    use crate::testing::MockInterface;
+    use crate::pull::PullUpConfig;
+    use crate::register::{Register, status_int};
+    use crate::testing::{MockDelay, MockInterface};
     use futures::executor::block_on;
+
+    #[test]
+    fn diagnostic_register_reads_return_raw_bytes() {
+        let mut interface = MockInterface::default();
+        interface.set_reg(Register::WhoAmI.addr(), 0x05);
+        interface.set_reg(Register::RevisionId.addr(), 0x7c);
+        interface.set_reg(Register::Ctrl1.addr(), 0x60);
+        let config = Config::new();
+        let settings = InterfaceSettings::new(true, true, false, false, false, false);
+        let core = DeviceCore::new(interface, config, settings);
+        let mut driver: Qmi8658<MockInterface, (), ()> = Qmi8658 {
+            core,
+            int1: None,
+            int2: None,
+        };
+
+        assert_eq!(
+            block_on(driver.read_register(Register::WhoAmI.addr())).expect("single register"),
+            0x05
+        );
+
+        let mut identity = [0u8; 3];
+        block_on(driver.read_registers(Register::WhoAmI.addr(), &mut identity))
+            .expect("register block");
+        assert_eq!(identity, [0x05, 0x7c, 0x60]);
+    }
 
     #[test]
     fn apply_fifo_config_writes_fifo_registers() {
         let interface = MockInterface::default();
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, true, false);
+        let settings = InterfaceSettings::new(true, true, false, false, false, false);
         let core = DeviceCore::new(interface, config, settings);
         let mut driver: Qmi8658<MockInterface, (), ()> = Qmi8658 {
             core,
@@ -744,7 +824,7 @@ mod tests {
     fn apply_interrupt_config_writes_ctrl8() {
         let interface = MockInterface::default();
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, true, false);
+        let settings = InterfaceSettings::new(true, true, false, false, false, false);
         let core = DeviceCore::new(interface, config, settings);
         let mut driver: Qmi8658<MockInterface, (), ()> = Qmi8658 {
             core,
@@ -760,5 +840,65 @@ mod tests {
         let interface = driver.core.release();
         let writes = interface.writes();
         assert_eq!(writes, [(Register::Ctrl8.addr(), irq.ctrl8_value())]);
+    }
+
+    #[test]
+    fn apply_pull_up_config_writes_cal1_and_ctrl9() {
+        let interface = MockInterface::default();
+        let config = Config::new();
+        let settings = InterfaceSettings::new(true, true, false, false, false, false);
+        let core = DeviceCore::new(interface, config, settings);
+        let mut driver: Qmi8658<MockInterface, (), ()> = Qmi8658 {
+            core,
+            int1: None,
+            int2: None,
+        };
+
+        let pull_up = PullUpConfig::new()
+            .with_group(crate::pull::PullUpGroup::Aux, true)
+            .with_group(crate::pull::PullUpGroup::Sdx, true)
+            .with_group(crate::pull::PullUpGroup::Cs, true);
+        block_on(driver.apply_pull_up_config(pull_up)).expect("pull-up config");
+
+        let interface = driver.core.release();
+        let writes = interface.writes();
+        assert_eq!(
+            writes,
+            [
+                (Register::Cal1L.addr(), pull_up.cal1_l()),
+                (Register::Ctrl9.addr(), pull_up.ctrl9_cmd()),
+            ]
+        );
+    }
+
+    #[test]
+    fn apply_pull_up_config_with_delay_waits_for_ctrl9_done() {
+        let interface =
+            MockInterface::default().with_reg(Register::StatusInt.addr(), status_int::CMD_DONE);
+        let config = Config::new();
+        let settings = InterfaceSettings::new(true, true, false, false, false, false);
+        let core = DeviceCore::new(interface, config, settings);
+        let mut driver: Qmi8658<MockInterface, (), ()> = Qmi8658 {
+            core,
+            int1: None,
+            int2: None,
+        };
+        let mut delay = MockDelay::default();
+
+        let pull_up = PullUpConfig::new().disable_all();
+        block_on(driver.apply_pull_up_config_with_delay(&mut delay, pull_up))
+            .expect("pull-up config with delay");
+
+        let interface = driver.core.release();
+        let writes = interface.writes();
+        assert_eq!(
+            writes,
+            [
+                (Register::Cal1L.addr(), pull_up.cal1_l()),
+                (Register::Ctrl9.addr(), pull_up.ctrl9_cmd()),
+                (Register::Ctrl9.addr(), 0x00),
+            ]
+        );
+        assert_eq!(delay.calls, 0);
     }
 }

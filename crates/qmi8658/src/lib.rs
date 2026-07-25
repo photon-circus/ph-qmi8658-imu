@@ -1,5 +1,5 @@
 //! Async `#![no_std]` driver for the
-//! [QMI8658C](https://www.qstcorp.com/en_comp_prod/QMI8658C) 6-axis IMU
+//! QMI8658A/C 6-axis IMU
 //! (accelerometer + gyroscope + temperature) from QST Corporation.
 //!
 //! This crate provides a lightweight, `embedded-hal-async` based driver for the
@@ -29,9 +29,10 @@
 //!
 //! # CTRL9 handshake
 //!
-//! By default CTRL8.bit7 = 0 and CmdDone is routed to INT1/STATUS1.bit0.
+//! By default CTRL8.bit7 = 0 and CmdDone can assert INT1.
 //! Set [`InterruptConfig::with_ctrl9_handshake_statusint(true)`](InterruptConfig::with_ctrl9_handshake_statusint)
-//! to route CmdDone to STATUSINT.bit7. The driver polls the correct source automatically.
+//! to suppress that pin handshake and use polling. CmdDone is always read from
+//! STATUSINT.bit7 and acknowledged by writing `0x00` to CTRL9.
 //!
 //! # Sync sample locking
 //!
@@ -45,8 +46,8 @@
 //! - External magnetometer integration (mag raw types and FIFO mag frame parsing
 //!   are included for future support).
 //! - AttitudeEngine configuration and Motion-on-Demand.
-//! - Motion detection engines (tap/any/no/sig motion, pedometer) &mdash; these are
-//!   QMI8658A-only and are not applicable to the QMI8658C.
+//! - Full configuration APIs for motion detection engines (tap/any/no/significant
+//!   motion and pedometer).
 //!
 //! # Scaling helpers
 //!
@@ -109,6 +110,9 @@
     clippy::let_underscore_future
 )]
 
+#[cfg(all(feature = "qmi8658a", feature = "qmi8658c"))]
+compile_error!("features `qmi8658a` and `qmi8658c` are mutually exclusive");
+
 #[cfg(feature = "fixed")]
 extern crate fixed as fixed_crate;
 
@@ -120,6 +124,7 @@ mod error;
 mod interface;
 mod interrupt;
 mod macros;
+mod pull;
 mod register;
 mod self_test;
 mod wom;
@@ -143,26 +148,15 @@ pub use driver::{Qmi8658, Qmi8658I2c, Qmi8658Spi};
 // Data types
 pub use data::{AccelRaw, GyroRaw, MagRaw, RawBlock, Sample, TemperatureRaw, Timestamp};
 pub use data::{
-    FifoConfig,
-    FifoFrame,
-    FifoFrameFormat,
-    FifoFrameIterator,
-    FifoMode,
-    FifoReadout,
-    FifoSize,
-    FifoStatus,
-    ScaleFactor,
-    accel_lsb_per_g,
-    accel_mg_per_lsb,
-    gyro_lsb_per_dps,
-    gyro_mdps_per_lsb,
-    temperature_lsb_per_celsius,
-    temperature_mdegc_per_lsb,
+    FifoConfig, FifoFrame, FifoFrameFormat, FifoFrameIterator, FifoMode, FifoReadout, FifoSize,
+    FifoStatus, ScaleFactor, accel_lsb_per_g, accel_mg_per_lsb, gyro_lsb_per_dps,
+    gyro_mdps_per_lsb, temperature_lsb_per_celsius, temperature_mdegc_per_lsb,
 };
 
 // Features
 pub use error::Error;
 pub use interrupt::{InterruptConfig, InterruptPin, InterruptStatus, InterruptWaitError};
+pub use pull::{PullUpConfig, PullUpGroup};
 pub use self_test::{SelfTestAxis, SelfTestError, SelfTestReport};
 pub use wom::{WomConfig, WomInterruptLevel};
 

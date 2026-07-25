@@ -1,6 +1,6 @@
-extern crate std;
+extern crate alloc;
 
-use std::vec::Vec;
+use alloc::vec::Vec;
 
 use embedded_hal_async::delay::DelayNs;
 
@@ -10,6 +10,8 @@ use crate::interface::{Interface, sealed};
 #[derive(Clone, Debug)]
 pub(crate) struct MockInterface {
     regs: [u8; 256],
+    reads: Vec<u8>,
+    read_scripts: Vec<(u8, Vec<Result<u8, Error>>)>,
     writes: Vec<(u8, u8)>,
     write_bursts: Vec<(u8, Vec<u8>)>,
 }
@@ -18,6 +20,8 @@ impl Default for MockInterface {
     fn default() -> Self {
         Self {
             regs: [0u8; 256],
+            reads: Vec::new(),
+            read_scripts: Vec::new(),
             writes: Vec::new(),
             write_bursts: Vec::new(),
         }
@@ -34,6 +38,15 @@ impl MockInterface {
         self.regs[reg as usize] = value;
     }
 
+    pub(crate) fn with_read_sequence(mut self, reg: u8, values: &[Result<u8, Error>]) -> Self {
+        self.read_scripts.push((reg, values.to_vec()));
+        self
+    }
+
+    pub(crate) fn reads(&self) -> &[u8] {
+        &self.reads
+    }
+
     pub(crate) fn writes(&self) -> &[(u8, u8)] {
         &self.writes
     }
@@ -46,6 +59,14 @@ impl MockInterface {
 
 impl Interface for MockInterface {
     async fn read_reg(&mut self, reg: u8) -> Result<u8, Error> {
+        self.reads.push(reg);
+        if let Some((_, values)) = self
+            .read_scripts
+            .iter_mut()
+            .find(|(script_reg, values)| *script_reg == reg && !values.is_empty())
+        {
+            return values.remove(0);
+        }
         Ok(self.regs[reg as usize])
     }
 
@@ -85,11 +106,13 @@ impl sealed::Sealed for MockInterface {}
 pub(crate) struct MockDelay {
     pub(crate) calls: u32,
     pub(crate) last_ns: Option<u32>,
+    pub(crate) total_ns: u64,
 }
 
 impl DelayNs for MockDelay {
     async fn delay_ns(&mut self, ns: u32) {
         self.calls += 1;
         self.last_ns = Some(ns);
+        self.total_ns += u64::from(ns);
     }
 }

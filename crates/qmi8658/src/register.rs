@@ -160,8 +160,21 @@ pub mod ctrl1 {
     pub const ADDR_AI: u8 = 0b0100_0000;
     /// Big-endian serial interface read data.
     pub const BE: u8 = 0b0010_0000;
-    /// Reserved bits.
-    pub const RESERVED_MASK: u8 = 0b0001_1110;
+    /// QMI8658A: enable the INT2 push-pull output.
+    #[cfg(feature = "qmi8658a")]
+    pub const INT2_EN: u8 = 0b0001_0000;
+    /// QMI8658A: enable the INT1 push-pull output.
+    #[cfg(feature = "qmi8658a")]
+    pub const INT1_EN: u8 = 0b0000_1000;
+    /// 0: FIFO interrupt is mapped to INT2 pin
+    /// 1: FIFO interrupt is mapped to INT1 pin
+    pub const FIFO_INT_SEL: u8 = 0b0000_0100;
+    /// Reserved bits for the selected device variant.
+    #[cfg(feature = "qmi8658a")]
+    pub const RESERVED_MASK: u8 = 0b0000_0010;
+    /// Reserved bits for QMI8658C and the legacy no-variant build.
+    #[cfg(not(feature = "qmi8658a"))]
+    pub const RESERVED_MASK: u8 = 0b0001_1010;
     /// Disable the internal 2 MHz oscillator (power-down).
     pub const SENSOR_DISABLE: u8 = 0b0000_0001;
 }
@@ -234,9 +247,16 @@ pub mod ctrl7 {
     pub const SYNC_SMPL: u8 = 0b1000_0000;
     /// High-speed internal clock.
     pub const SYS_HS: u8 = 0b0100_0000;
-    /// Reserved bit.
-    pub const RESERVED_5: u8 = 0b0010_0000;
-    /// Gyroscope snooze mode.
+    /// DRDY (Data Ready) signal disable control.
+    /// Bit5, Default: 0 (DRDY enabled, routed to INT2 pin)
+    /// - 0: DRDY signal enabled, output to INT2 pin (will generate periodic pulse at ODR frequency)
+    /// - 1: DRDY signal disabled, blocked from INT2 pin (fixes periodic level toggle on INT2)
+    pub const DRDY_DIS: u8 = 0b0010_0000;
+    /// Gyroscope snooze mode control
+    /// Bit4, Default: 0 (full gyro mode)
+    /// Only effective when G_EN = 1 (gyroscope enabled)
+    /// - 0: Gyroscope full mode (drive & sense enabled, normal data output)
+    /// - 1: Gyroscope snooze mode (only drive enabled, no data output, faster wake-up than full disable)
     pub const G_SN: u8 = 0b0001_0000;
     /// Enable AttitudeEngine.
     pub const S_EN: u8 = 0b0000_1000;
@@ -278,6 +298,8 @@ pub mod ctrl9 {
     pub const CMD_MASK: u8 = 0b1111_1111;
     /// No operation.
     pub const CMD_NOP: u8 = 0b0000_0000;
+    /// Acknowledge a completed CTRL9 command.
+    pub const CMD_ACK: u8 = 0b0000_0000;
     /// Copy gyro bias from CAL registers.
     pub const CMD_GYRO_BIAS: u8 = 0b0000_0001;
     /// Request MoD (SDI) data.
@@ -394,8 +416,8 @@ pub mod status1 {
     pub const WOM: u8 = 0b0000_0100;
     /// Tap detected.
     pub const TAP: u8 = 0b0000_0010;
-    /// Ctrl9 command done (CTRL9 handshake when routed to STATUS1).
-    pub const CMD_DONE: u8 = 0b0000_0001;
+    /// Reserved bit.
+    pub const RESERVED_0: u8 = 0b0000_0001;
 }
 
 /// AttitudeEngine register 1 bits.
@@ -434,4 +456,11 @@ pub mod ae_reg2 {
 pub mod reset {
     /// Soft reset command value.
     pub const SOFT_RESET: u8 = 0b1011_0000;
+    /// Register polled for reset completion (address `0x4D`).
+    ///
+    /// During a soft reset the device repurposes this address (otherwise
+    /// `DqYL`) to report reset status, as done in the vendor reference driver.
+    pub const RESET_DONE_REG: u8 = 0x4D;
+    /// Value read from [`RESET_DONE_REG`] once the soft reset has completed.
+    pub const RESET_DONE: u8 = 0x80;
 }

@@ -16,7 +16,7 @@ pub enum InterruptPin {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct InterruptConfig {
-    /// Use STATUSINT.bit7 for CTRL9 handshake when set.
+    /// Suppress the CTRL9 INT1 pin handshake and use STATUSINT polling when set.
     pub ctrl9_handshake_statusint: bool,
     /// Route motion detection events to the selected pin.
     pub motion_pin: InterruptPin,
@@ -56,7 +56,7 @@ impl InterruptConfig {
         self
     }
 
-    /// Enables or disables the CTRL9 handshake on STATUSINT.
+    /// Selects polling-only CTRL9 handshakes instead of asserting INT1.
     #[must_use]
     pub const fn with_ctrl9_handshake_statusint(mut self, enable: bool) -> Self {
         self.ctrl9_handshake_statusint = enable;
@@ -137,9 +137,15 @@ impl Default for InterruptConfig {
 pub struct InterruptStatus {
     /// CTRL9 command done.
     pub cmd_done: bool,
-    /// Data locked flag.
+    /// STATUSINT.bit1.
+    ///
+    /// This is the data-lock flag in SyncSample mode and the current INT1 pin
+    /// level in non-SyncSample mode.
     pub data_locked: bool,
-    /// Data available flag.
+    /// STATUSINT.bit0.
+    ///
+    /// This is the data-available flag in SyncSample mode and the current INT2
+    /// pin level in non-SyncSample mode.
     pub data_available: bool,
     /// Accelerometer data ready.
     pub accel_ready: bool,
@@ -164,8 +170,7 @@ pub struct InterruptStatus {
 impl InterruptStatus {
     pub(crate) const fn from_regs(status_int_reg: u8, status0_reg: u8, status1_reg: u8) -> Self {
         Self {
-            cmd_done: (status_int_reg & status_int::CMD_DONE) != 0
-                || (status1_reg & status1::CMD_DONE) != 0,
+            cmd_done: (status_int_reg & status_int::CMD_DONE) != 0,
             data_locked: (status_int_reg & status_int::LOCKED) != 0,
             data_available: (status_int_reg & status_int::AVAIL) != 0,
             accel_ready: (status0_reg & status0::ACCEL_AVAIL) != 0,
@@ -215,9 +220,9 @@ mod tests {
     #[test]
     fn decode_interrupt_status() {
         let status = InterruptStatus::from_regs(
-            status_int::AVAIL,
+            status_int::CMD_DONE | status_int::AVAIL,
             status0::ACCEL_AVAIL | status0::GYRO_AVAIL,
-            status1::TAP | status1::ANY_MOTION | status1::CMD_DONE | status1::WOM,
+            status1::TAP | status1::ANY_MOTION | status1::WOM,
         );
 
         assert!(status.cmd_done);

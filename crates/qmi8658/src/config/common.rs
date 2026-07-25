@@ -455,6 +455,12 @@ impl GyroConfig {
     }
 }
 
+impl Default for GyroConfig {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -490,11 +496,5 @@ mod tests {
         assert_eq!(AccelOutputDataRate::LowPowerHz3.data_read_delay_us(), 270);
         assert_eq!(GyroOutputDataRate::Hz8000.data_read_delay_us(), 2);
         assert_eq!(GyroOutputDataRate::Hz31_25.data_read_delay_us(), 12);
-    }
-}
-
-impl Default for GyroConfig {
-    fn default() -> Self {
-        Self::DEFAULT
     }
 }

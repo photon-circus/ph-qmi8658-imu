@@ -1,7 +1,7 @@
 //! Fixed-point conversion helpers.
 
-use super::{AccelRaw, GyroRaw, Sample, TemperatureRaw};
 use super::scale::{accel_lsb_per_g, gyro_lsb_per_dps, temperature_lsb_per_celsius};
+use super::{AccelRaw, GyroRaw, Sample, TemperatureRaw};
 use crate::config::common::{AccelRange, GyroRange};
 
 /// Fixed-point number type used for sensor conversions (I32F32).
