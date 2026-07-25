@@ -733,8 +733,9 @@ mod tests {
     use crate::data::{FifoConfig, FifoMode, FifoSize};
     use crate::interface::InterfaceSettings;
     use crate::interrupt::{InterruptConfig, InterruptPin};
-    use crate::register::Register;
-    use crate::testing::MockInterface;
+    use crate::pull::PullUpConfig;
+    use crate::register::{Register, status_int};
+    use crate::testing::{MockDelay, MockInterface};
     use futures::executor::block_on;
 
     #[test]
@@ -779,5 +780,64 @@ mod tests {
         let interface = driver.core.release();
         let writes = interface.writes();
         assert_eq!(writes, [(Register::Ctrl8.addr(), irq.ctrl8_value())]);
+    }
+
+    #[test]
+    fn apply_pull_up_config_writes_cal1_and_ctrl9() {
+        let interface = MockInterface::default();
+        let config = Config::new();
+        let settings = InterfaceSettings::new(true, true, false, true, true, true);
+        let core = DeviceCore::new(interface, config, settings);
+        let mut driver: Qmi8658<MockInterface, (), ()> = Qmi8658 {
+            core,
+            int1: None,
+            int2: None,
+        };
+
+        let pull_up = PullUpConfig::new().disable_spi_related();
+        block_on(driver.apply_pull_up_config(pull_up)).expect("pull-up config");
+
+        let interface = driver.core.release();
+        let writes = interface.writes();
+        assert_eq!(
+            writes,
+            [
+                (Register::Cal1L.addr(), pull_up.cal1_l()),
+                (Register::Cal1H.addr(), pull_up.cal1_h()),
+                (Register::Ctrl9.addr(), pull_up.ctrl9_cmd()),
+            ]
+        );
+    }
+
+    #[test]
+    fn apply_pull_up_config_with_delay_waits_for_ctrl9_done() {
+        let interface =
+            MockInterface::default().with_reg(Register::StatusInt.addr(), status_int::CMD_DONE);
+        let config = Config::new();
+        let settings = InterfaceSettings::new(true, true, false, true, true, true);
+        let core = DeviceCore::new(interface, config, settings);
+        let mut driver: Qmi8658<MockInterface, (), ()> = Qmi8658 {
+            core,
+            int1: None,
+            int2: None,
+        };
+        let mut delay = MockDelay::default();
+
+        let pull_up = PullUpConfig::new().disable_all();
+        block_on(driver.apply_pull_up_config_with_delay(&mut delay, pull_up))
+            .expect("pull-up config with delay");
+
+        let interface = driver.core.release();
+        let writes = interface.writes();
+        assert_eq!(
+            writes,
+            [
+                (Register::Cal1L.addr(), pull_up.cal1_l()),
+                (Register::Cal1H.addr(), pull_up.cal1_h()),
+                (Register::Ctrl9.addr(), pull_up.ctrl9_cmd()),
+                (Register::Ctrl9.addr(), 0x00),
+            ]
+        );
+        assert_eq!(delay.calls, 0);
     }
 }
