@@ -121,9 +121,6 @@ impl Config {
             value |= ctrl5::A_LPF_EN;
             value |= (mode.bits() << ctrl5::A_LPF_MODE_SHIFT) & ctrl5::A_LPF_MODE_MASK;
         }
-        if !self.enable_drdy {
-            value |= ctrl7::DRDY_DIS;
-        }
         value
     }
 
@@ -134,6 +131,9 @@ impl Config {
         }
         if self.gyro_enabled() {
             value |= ctrl7::G_EN;
+        }
+        if !self.enable_drdy {
+            value |= ctrl7::DRDY_DIS;
         }
         value
     }
