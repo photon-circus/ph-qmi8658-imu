@@ -68,8 +68,8 @@ impl I2cConfig {
 
     /// Configures FIFO interrupt mapping pin.
     #[must_use]
-    pub const fn with_fifo_int_use_int1(mut self, enable: bool) -> Self {
-        self.fifo_int_use_int1 = enable;
+    pub const fn with_fifo_int_use_int1(mut self, use_int1: bool) -> Self {
+        self.fifo_int_use_int1 = use_int1;
         self
     }
 

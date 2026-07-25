@@ -243,7 +243,7 @@ pub mod ctrl7 {
     pub const SYNC_SMPL: u8 = 0b1000_0000;
     /// High-speed internal clock.
     pub const SYS_HS: u8 = 0b0100_0000;
-     /// DRDY (Data Ready) signal disable control
+    /// DRDY (Data Ready) signal disable control.
     /// Bit5, Default: 0 (DRDY enabled, routed to INT2 pin)
     /// - 0: DRDY signal enabled, output to INT2 pin (will generate periodic pulse at ODR frequency)
     /// - 1: DRDY signal disabled, blocked from INT2 pin (fixes periodic level toggle on INT2)
