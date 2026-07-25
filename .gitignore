@@ -1,2 +1,6 @@
 .idea/
 target/
+tmp/
+__pycache__/
+*.py[cod]
+__pycache__/

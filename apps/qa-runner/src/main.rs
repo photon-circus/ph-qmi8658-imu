@@ -194,7 +194,7 @@ async fn wait_for_data_ready(imu: &mut ImuDriver, accel: bool, gyro: bool) -> Re
     }
 
     let (retries, delay_ms) = if let Some(period_ns) = imu.sample_period_ns() {
-        let period_ms = (u64::from(period_ns) + 999_999) / 1_000_000;
+        let period_ms = u64::from(period_ns).div_ceil(1_000_000);
         let window_ms = (period_ms.saturating_mul(5)).clamp(20, 2_000);
         let delay_ms = DATA_READY_DELAY_MS.max(1);
         let retries = (window_ms / delay_ms).max(1);

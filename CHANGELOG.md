@@ -40,6 +40,10 @@ All notable changes to this project will be documented in this file.
 - Expanded CI architecture coverage to explicitly include the ESP32-C2/C3,
   C5/C6/C61/H2, P4, RP2040, both RP2350/RP2354 CPU architectures, and common
   STM32, Nordic, Microchip SAM, and NXP Cortex-M families.
+- Added automated BE hardware-evidence firmware and host tooling for all eight
+  QMI8658A/C, I2C/SPI, and little-/big-endian combinations, including raw-byte
+  cross-checks, physical plausibility checks, matrix gating, and collection
+  instructions.
 
 ### Documentation
 

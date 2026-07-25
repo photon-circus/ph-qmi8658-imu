@@ -55,6 +55,22 @@ QMI8658C over I2C/SPI with CTRL1.BE set and cleared. Attach:
 - static 1 g orientation
 - temperature plausibility
 
+Use the automated collector and operator procedure in
+[`apps/qa-runner/README.md`](../../apps/qa-runner/README.md). Before accepting
+the gate, run:
+
+```bash
+python -m unittest discover -s apps/qa-runner/tools -p "test_*.py" -v
+python apps/qa-runner/tools/collect_evidence.py matrix \
+  --input-dir hardware-evidence/v0.1.2 \
+  --expected-source-commit <candidate-commit-sha>
+```
+
+Commit the raw logs, per-run JSON/Markdown files, and generated
+`BE-01-MATRIX.json`/`BE-01-MATRIX.md`. The matrix command must exit successfully,
+the report must say `PASS`, and every selected run must come from a clean source
+tree at the candidate commit.
+
 The release remains blocked if any matrix row is missing or unexplained.
 
 ## Target Matrix

@@ -75,10 +75,22 @@ jobs:
         run: cargo +esp build -p ph-qmi8658 --target ${{ matrix.target }} -Zbuild-std=core --features defmt,fixed
       - name: Build QMI8658A
         run: cargo +esp build -p ph-qmi8658 --target ${{ matrix.target }} -Zbuild-std=core --no-default-features --features qmi8658a,defmt,fixed
-      - name: Build hardware QA runner
+      - name: Build hardware evidence firmware matrix
         if: matrix.chip == 'esp32-s3'
         working-directory: apps/qa-runner
-        run: cargo +esp build
+        run: |
+          for features in \
+            qmi8658c,transport-i2c \
+            qmi8658c,transport-i2c,big-endian \
+            qmi8658c,transport-spi \
+            qmi8658c,transport-spi,big-endian \
+            qmi8658a,transport-i2c \
+            qmi8658a,transport-i2c,big-endian \
+            qmi8658a,transport-spi \
+            qmi8658a,transport-spi,big-endian
+          do
+            cargo +esp build --no-default-features --features "$features"
+          done
       - name: Build IMU example
         if: matrix.chip == 'esp32-s3'
         working-directory: apps/imu-example
@@ -139,6 +151,16 @@ jobs:
         with:
           command: check
           manifest-path: crates/qmi8658/Cargo.toml
+
+  hardware-evidence-tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test evidence parser and release gate
+        run: python -m unittest discover -s apps/qa-runner/tools -p "test_*.py" -v
 
   doc:
     runs-on: ubuntu-latest

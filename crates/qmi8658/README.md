@@ -383,6 +383,14 @@ The v0.1.2 candidate still requires hardware byte-order verification for
 QMI8658A/C over I2C/SPI with CTRL1.BE set and cleared. No transport-specific
 workaround is applied without reproducible evidence.
 
+The QA runner includes automated firmware selection, serial-log capture,
+raw-byte validation, physical plausibility checks, and a complete eight-row
+matrix gate. See its [hardware evidence instructions](../../apps/qa-runner/README.md).
+
+For qualification and vendor-register inspection, `read_register` and
+`read_registers` expose read-only access by raw register address. These methods
+do not bypass the driver's typed write paths.
+
 ## v0.1.1 Compatibility
 
 v0.1.1 `Config` struct literals and exhaustive `Error` matches remain valid.

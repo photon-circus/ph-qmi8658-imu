@@ -27,7 +27,7 @@ MSRV: **1.92.0** &mdash; [API docs on docs.rs](https://docs.rs/ph-qmi8658)
 | Path | Description |
 |------|-------------|
 | [`crates/qmi8658`](crates/qmi8658/) | Driver crate (`ph-qmi8658`) |
-| [`apps/qa-runner`](apps/qa-runner/) | Hardware test runner for ESP32-S3 |
+| [`apps/qa-runner`](apps/qa-runner/) | Automated A/C, I2C/SPI, LE/BE hardware evidence runner |
 | [`apps/imu-example`](apps/imu-example/) | FIFO-based example app for ESP32-S3 |
 | [`docs/vendor`](docs/vendor/) | QST datasheets used for register-level review |
 
@@ -36,6 +36,7 @@ MSRV: **1.92.0** &mdash; [API docs on docs.rs](https://docs.rs/ph-qmi8658)
 - [Driver README](crates/qmi8658/README.md) &mdash; usage flows and code examples
 - [Architecture](crates/qmi8658/ARCHITECTURE.md) &mdash; module structure and sequence diagrams
 - [IMU Example](apps/imu-example/README.md) &mdash; FIFO streaming example for ESP32-S3
+- [Hardware Evidence Runner](apps/qa-runner/README.md) &mdash; BE-01 wiring, collection, and matrix validation
 - [Changelog](CHANGELOG.md) &mdash; release history
 - [Contributing](CONTRIBUTING.md) &mdash; development setup and PR guidelines
 - [Release Checklist](crates/qmi8658/RELEASE_CHECKLIST.md) &mdash; publish procedures
@@ -88,7 +89,7 @@ Build targets from their directories:
 QA runner:
 ```bash
 cd apps/qa-runner
-cargo build
+cargo +esp build
 ```
 
 FIFO example:
