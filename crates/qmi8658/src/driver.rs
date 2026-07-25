@@ -20,8 +20,7 @@ use crate::interrupt::{InterruptConfig, InterruptStatus, InterruptWaitError};
 use crate::register::Register;
 use crate::self_test::{SelfTestError, SelfTestReport};
 use crate::wom::WomConfig;
-
-const SELF_TEST_DELAY_NS: u32 = 1_000_000;
+use crate::pull::PullUpConfig;
 
 /// QMI8658 6-axis IMU driver.
 pub struct Qmi8658<I, INT1 = (), INT2 = ()> {
@@ -179,6 +178,22 @@ where
     pub async fn apply_config(&mut self) -> Result<(), Error> {
         // Ordering: disable sensors (CTRL7=0), write CTRL1/2/3/5, then re-enable via CTRL7.
         self.core.apply_config().await
+    }
+
+    /// Applies the pull-up resistor configuration (CAL1_L + CTRL9 command).
+    pub async fn apply_pull_config(&mut self, config: PullUpConfig) -> Result<(), Error> {
+        self.core.apply_pull_up_config(config).await
+    }
+
+    /// Applies the pull-up resistor configuration and waits for CTRL9 command completion.
+    pub async fn apply_pull_up_config_with_delay<D: DelayNs>(
+        &mut self,
+        delay: &mut D,
+        config: PullUpConfig,
+    ) -> Result<(), Error> {
+        self.core
+            .apply_pull_up_config_with_delay(delay, config)
+            .await
     }
 
     /// Applies the interrupt routing and enable configuration (CTRL8).
@@ -553,7 +568,9 @@ where
         let ctrl2_off = accel.ctrl2_value_with_self_test(false);
 
         self.core.write_reg(Register::Ctrl7, 0).await?;
-        delay.delay_ns(SELF_TEST_DELAY_NS).await;
+        delay
+            .delay_ns(self.core.t6_ns_from_odr_milli(accel.odr.hz_milli()) as u32)
+            .await;
         self.core.write_reg(Register::Ctrl2, ctrl2_st).await?;
 
         if let Err(err) = self.wait_int2_high().await {
@@ -591,7 +608,9 @@ where
         let ctrl3_off = gyro.ctrl3_value_with_self_test(false);
 
         self.core.write_reg(Register::Ctrl7, 0).await?;
-        delay.delay_ns(SELF_TEST_DELAY_NS).await;
+        delay
+            .delay_ns(self.core.t6_ns_from_odr_milli(gyro.odr.hz_milli()) as u32)
+            .await;
         self.core.write_reg(Register::Ctrl3, ctrl3_st).await?;
 
         if let Err(err) = self.wait_int2_high().await {
@@ -722,7 +741,7 @@ mod tests {
     fn apply_fifo_config_writes_fifo_registers() {
         let interface = MockInterface::default();
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, true, false);
+        let settings = InterfaceSettings::new(true, true, false, true, true, true);
         let core = DeviceCore::new(interface, config, settings);
         let mut driver: Qmi8658<MockInterface, (), ()> = Qmi8658 {
             core,
@@ -744,7 +763,7 @@ mod tests {
     fn apply_interrupt_config_writes_ctrl8() {
         let interface = MockInterface::default();
         let config = Config::new();
-        let settings = InterfaceSettings::new(true, true, false);
+        let settings = InterfaceSettings::new(true, true, false, true, true, true);
         let core = DeviceCore::new(interface, config, settings);
         let mut driver: Qmi8658<MockInterface, (), ()> = Qmi8658 {
             core,

@@ -14,6 +14,9 @@ pub struct SpiConfig {
     pub(crate) auto_increment: bool,
     pub(crate) big_endian: bool,
     pub(crate) three_wire: bool,
+    pub(crate) enable_int1: bool,
+    pub(crate) enable_int2: bool,
+    pub(crate) fifo_int_use_int1: bool,
 }
 
 impl SpiConfig {
@@ -23,6 +26,9 @@ impl SpiConfig {
             auto_increment: true,
             big_endian: true,
             three_wire: false,
+            enable_int1: true,
+            enable_int2: true,
+            fifo_int_use_int1: true,
         }
     }
 
@@ -47,8 +53,36 @@ impl SpiConfig {
         self
     }
 
+    /// Enables or disables INT1 pin (push-pull mode).
+    #[must_use]
+    pub const fn with_enable_int1(mut self, enable: bool) -> Self {
+        self.enable_int1 = enable;
+        self
+    }
+
+    /// Enables or disables INT2 pin (push-pull mode).
+    #[must_use]
+    pub const fn with_enable_int2(mut self, enable: bool) -> Self {
+        self.enable_int2 = enable;
+        self
+    }
+
+    /// Configures FIFO interrupt mapping pin.
+    #[must_use]
+    pub const fn with_fifo_int_use_int1(mut self, enable: bool) -> Self {
+        self.fifo_int_use_int1 = enable;
+        self
+    }
+
     pub(crate) const fn interface_settings(self) -> InterfaceSettings {
-        InterfaceSettings::new(self.auto_increment, self.big_endian, self.three_wire)
+        InterfaceSettings::new(
+            self.auto_increment,
+            self.big_endian,
+            self.three_wire,
+            self.enable_int1,
+            self.enable_int2,
+            self.fifo_int_use_int1,
+        )
     }
 }
 
