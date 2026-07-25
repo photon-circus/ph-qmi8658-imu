@@ -31,11 +31,15 @@ literal and exhaustive `Error` match.
 cargo fmt --all -- --check
 cargo clippy -p ph-qmi8658 --all-targets --features defmt,fixed -- -D warnings
 cargo clippy -p ph-qmi8658 --all-targets --no-default-features --features qmi8658a,defmt,fixed -- -D warnings
-cargo test -p ph-qmi8658 --features defmt,fixed
-cargo test -p ph-qmi8658 --no-default-features --features qmi8658a,defmt,fixed
+cargo test -p ph-qmi8658 --features fixed
+cargo test -p ph-qmi8658 --no-default-features --features qmi8658a,fixed
 RUSTDOCFLAGS="-D warnings" cargo doc -p ph-qmi8658 --no-deps --features defmt,fixed
 cargo deny --manifest-path crates/qmi8658/Cargo.toml check
 ```
+
+Desktop tests intentionally omit `defmt`: linking `defmt` requires an embedded
+logger/export implementation. Clippy, rustdoc, packaging, and embedded builds
+still compile the `defmt` feature.
 
 Run the same required checks with Rust 1.92.0.
 

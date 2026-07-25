@@ -35,6 +35,8 @@ All notable changes to this project will be documented in this file.
 - Removed the invalid STATUS1.bit0 CmdDone interpretation.
 - Corrected FIFO routing defaults so unchanged applications retain main-branch
   register behavior.
+- Aligned both ESP32-S3 applications with `defmt` 1.1.1 and refreshed their
+  lockfiles so they build against the v0.1.2 driver.
 
 ### Documentation
 

@@ -16,19 +16,22 @@ jobs:
       matrix:
         include:
           - name: qmi8658c
-            args: "--features defmt,fixed"
+            test_args: "--features fixed"
+            check_args: "--features defmt,fixed"
           - name: legacy-c
-            args: "--no-default-features"
+            test_args: "--no-default-features"
+            check_args: "--no-default-features"
           - name: qmi8658a
-            args: "--no-default-features --features qmi8658a,defmt,fixed"
+            test_args: "--no-default-features --features qmi8658a,fixed"
+            check_args: "--no-default-features --features qmi8658a,defmt,fixed"
     name: lint-test (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Test
-        run: cargo test -p ph-qmi8658 ${{ matrix.args }}
+        run: cargo test -p ph-qmi8658 ${{ matrix.test_args }}
       - name: Clippy
-        run: cargo clippy -p ph-qmi8658 --all-targets ${{ matrix.args }} -- -D warnings
+        run: cargo clippy -p ph-qmi8658 --all-targets ${{ matrix.check_args }} -- -D warnings
 
   variant-conflict:
     runs-on: ubuntu-latest
@@ -56,12 +59,18 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Build xtensa targets
         run: |
-          cargo +esp build -p ph-qmi8658 --target xtensa-esp32-none-elf -Zbuild-std=core
-          cargo +esp build -p ph-qmi8658 --target xtensa-esp32-none-elf -Zbuild-std=core --no-default-features --features qmi8658a
-          cargo +esp build -p ph-qmi8658 --target xtensa-esp32s2-none-elf -Zbuild-std=core
-          cargo +esp build -p ph-qmi8658 --target xtensa-esp32s2-none-elf -Zbuild-std=core --no-default-features --features qmi8658a
-          cargo +esp build -p ph-qmi8658 --target xtensa-esp32s3-none-elf -Zbuild-std=core
-          cargo +esp build -p ph-qmi8658 --target xtensa-esp32s3-none-elf -Zbuild-std=core --no-default-features --features qmi8658a
+          cargo +esp build -p ph-qmi8658 --target xtensa-esp32-none-elf -Zbuild-std=core --features defmt,fixed
+          cargo +esp build -p ph-qmi8658 --target xtensa-esp32-none-elf -Zbuild-std=core --no-default-features --features qmi8658a,defmt,fixed
+          cargo +esp build -p ph-qmi8658 --target xtensa-esp32s2-none-elf -Zbuild-std=core --features defmt,fixed
+          cargo +esp build -p ph-qmi8658 --target xtensa-esp32s2-none-elf -Zbuild-std=core --no-default-features --features qmi8658a,defmt,fixed
+          cargo +esp build -p ph-qmi8658 --target xtensa-esp32s3-none-elf -Zbuild-std=core --features defmt,fixed
+          cargo +esp build -p ph-qmi8658 --target xtensa-esp32s3-none-elf -Zbuild-std=core --no-default-features --features qmi8658a,defmt,fixed
+      - name: Build hardware QA runner
+        working-directory: apps/qa-runner
+        run: cargo +esp build
+      - name: Build IMU example
+        working-directory: apps/imu-example
+        run: cargo +esp build
 
   build-cross:
     runs-on: ubuntu-latest
@@ -80,9 +89,9 @@ jobs:
           - thumbv8m.main-none-eabihf
         variant:
           - name: qmi8658c
-            args: ""
+            args: "--features defmt,fixed"
           - name: qmi8658a
-            args: "--no-default-features --features qmi8658a"
+            args: "--no-default-features --features qmi8658a,defmt,fixed"
     name: build-cross (${{ matrix.target }}, ${{ matrix.variant.name }})
     steps:
       - uses: actions/checkout@v4
