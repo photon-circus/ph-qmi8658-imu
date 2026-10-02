@@ -1,6 +1,7 @@
+extern crate alloc;
 extern crate std;
 
-use std::vec::Vec;
+use alloc::{collections::VecDeque, vec::Vec};
 
 use embedded_hal_async::delay::DelayNs;
 
@@ -12,6 +13,8 @@ pub(crate) struct MockInterface {
     regs: [u8; 256],
     writes: Vec<(u8, u8)>,
     write_bursts: Vec<(u8, Vec<u8>)>,
+    pub(crate) statusint_reads: VecDeque<Result<u8, Error>>,
+    pub(crate) ignore_ack: bool,
 }
 
 impl Default for MockInterface {
@@ -20,6 +23,8 @@ impl Default for MockInterface {
             regs: [0u8; 256],
             writes: Vec::new(),
             write_bursts: Vec::new(),
+            statusint_reads: VecDeque::new(),
+            ignore_ack: false,
         }
     }
 }
@@ -46,6 +51,11 @@ impl MockInterface {
 
 impl Interface for MockInterface {
     async fn read_reg(&mut self, reg: u8) -> Result<u8, Error> {
+        if reg == crate::register::Register::StatusInt.addr()
+            && let Some(value) = self.statusint_reads.pop_front()
+        {
+            return value;
+        }
         Ok(self.regs[reg as usize])
     }
 
@@ -63,6 +73,15 @@ impl Interface for MockInterface {
     async fn write_reg(&mut self, reg: u8, value: u8) -> Result<(), Error> {
         self.regs[reg as usize] = value;
         self.writes.push((reg, value));
+        if reg == crate::register::Register::Ctrl9.addr()
+            && value == crate::register::ctrl9::CMD_ACK
+            && !self.ignore_ack
+        {
+            self.regs[crate::register::Register::StatusInt.addr() as usize] &=
+                !crate::register::status_int::CMD_DONE;
+            self.regs[crate::register::Register::Status1.addr() as usize] &=
+                !crate::register::status1::CMD_DONE;
+        }
         Ok(())
     }
 

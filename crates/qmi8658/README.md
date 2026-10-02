@@ -200,6 +200,12 @@ imu.set_ahb_clock_gating_with_delay(delay, true).await?;
 
 ### Wake on Motion (WoM)
 
+CTRL9 commands with a delay complete the acknowledgement handshake: wait for
+CmdDone, write `CTRL_CMD_ACK` (`0x00`), then wait for CmdDone to clear. Each phase
+polls every millisecond for up to one second and returns `Error::NotReady` on
+timeout. This is a driver policy, not a guaranteed hardware response time. See
+[QMI8658A datasheet, section 5.10](https://files.waveshare.com/upload/5/5f/QMI8658A_Datasheet_Rev_A.pdf).
+
 Configure low-power wake-on-motion detection to trigger on acceleration exceeding a
 threshold.
 

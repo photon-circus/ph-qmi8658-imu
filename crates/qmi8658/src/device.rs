@@ -396,29 +396,44 @@ where
         self.write_reg(Register::FifoCtrl, cleared).await
     }
 
-    /// Waits for CTRL9 command completion by polling the CmdDone bit.
+    /// Completes the CTRL9 handshake, including acknowledgement.
+    ///
+    /// QMI8658A requires CTRL_CMD_ACK followed by CmdDone clearing. The clear
+    /// check also handles completion bits that were already cleared by a read.
+    /// Each phase is bounded to 1,000 one-millisecond polling intervals;
+    /// this is a driver timeout policy, not a guaranteed device latency.
     pub(crate) async fn wait_ctrl9_done<D: DelayNs>(&mut self, delay: &mut D) -> Result<(), Error> {
-        const POLL_RETRIES: u8 = 10;
+        self.wait_ctrl9_state(delay, true).await?;
+        self.write_reg(Register::Ctrl9, ctrl9::CMD_ACK).await?;
+        self.wait_ctrl9_state(delay, false).await
+    }
+
+    async fn ctrl9_done(&mut self) -> Result<bool, Error> {
+        if !self.ctrl9_handshake_statusint {
+            let status = self.read_reg(Register::Status1).await?;
+            if status & crate::register::status1::CMD_DONE != 0 {
+                return Ok(true);
+            }
+        }
+        // Some revisions surface CmdDone here even when INT1 is selected.
+        Ok(self.read_reg(Register::StatusInt).await? & status_int::CMD_DONE != 0)
+    }
+
+    async fn wait_ctrl9_state<D: DelayNs>(
+        &mut self,
+        delay: &mut D,
+        done: bool,
+    ) -> Result<(), Error> {
+        const POLL_RETRIES: u16 = 1_000;
         const POLL_DELAY_NS: u32 = 1_000_000;
 
-        for _ in 0..POLL_RETRIES {
-            if self.ctrl9_handshake_statusint {
-                let status = self.read_reg(Register::StatusInt).await?;
-                if (status & status_int::CMD_DONE) != 0 {
-                    return Ok(());
-                }
-            } else {
-                let status1 = self.read_reg(Register::Status1).await?;
-                if (status1 & crate::register::status1::CMD_DONE) != 0 {
-                    return Ok(());
-                }
-                // Some revisions still surface CmdDone in STATUSINT even when INT1 is used.
-                let status = self.read_reg(Register::StatusInt).await?;
-                if (status & status_int::CMD_DONE) != 0 {
-                    return Ok(());
-                }
+        for attempt in 0..=POLL_RETRIES {
+            if self.ctrl9_done().await? == done {
+                return Ok(());
             }
-            delay.delay_ns(POLL_DELAY_NS).await;
+            if attempt < POLL_RETRIES {
+                delay.delay_ns(POLL_DELAY_NS).await;
+            }
         }
 
         Err(Error::NotReady)
@@ -834,6 +849,138 @@ mod tests {
         let mut delay = MockDelay::default();
         block_on(core.wait_ctrl9_done(&mut delay)).expect("ctrl9 done");
 
+        assert_eq!(delay.calls, 0);
+        assert_eq!(
+            core.interface.writes(),
+            [(Register::Ctrl9.addr(), ctrl9::CMD_ACK)]
+        );
+    }
+
+    #[test]
+    fn ctrl9_accepts_slow_completion_and_acknowledgement() {
+        let mut interface = MockInterface::default();
+        interface.statusint_reads.extend((0..30).map(|_| Ok(0)));
+        interface.statusint_reads.extend([
+            Ok(status_int::CMD_DONE),
+            Ok(status_int::CMD_DONE),
+            Ok(0),
+        ]);
+        let mut core = DeviceCore::new(
+            interface,
+            Config::new(),
+            InterfaceSettings::new(true, true, false),
+        );
+        core.ctrl9_handshake_statusint = true;
+        let mut delay = MockDelay::default();
+        block_on(core.wait_ctrl9_done(&mut delay)).unwrap();
+        assert_eq!(delay.calls, 31);
+        assert_eq!(
+            core.interface.writes(),
+            [(Register::Ctrl9.addr(), ctrl9::CMD_ACK)]
+        );
+    }
+
+    #[test]
+    fn ctrl9_repeated_commands_clear_completion() {
+        let mut core = DeviceCore::new(
+            MockInterface::default(),
+            Config::new(),
+            InterfaceSettings::new(true, true, false),
+        );
+        core.ctrl9_handshake_statusint = true;
+        let mut delay = MockDelay::default();
+        for _ in 0..3 {
+            core.interface
+                .set_reg(Register::StatusInt.addr(), status_int::CMD_DONE);
+            block_on(core.wait_ctrl9_done(&mut delay)).unwrap();
+            assert!(!block_on(core.ctrl9_done()).unwrap());
+        }
+        assert_eq!(core.interface.writes().len(), 3);
+    }
+
+    #[test]
+    fn ctrl9_timeout_does_not_acknowledge_unfinished_command() {
+        let mut core = DeviceCore::new(
+            MockInterface::default(),
+            Config::new(),
+            InterfaceSettings::new(true, true, false),
+        );
+        core.ctrl9_handshake_statusint = true;
+        let mut delay = MockDelay::default();
+        assert_eq!(
+            block_on(core.wait_ctrl9_done(&mut delay)),
+            Err(Error::NotReady)
+        );
+        assert_eq!(delay.calls, 1_000);
+        assert!(core.interface.writes().is_empty());
+    }
+
+    #[test]
+    fn ctrl9_acknowledgement_timeout_is_bounded() {
+        let mut interface =
+            MockInterface::default().with_reg(Register::StatusInt.addr(), status_int::CMD_DONE);
+        interface.ignore_ack = true;
+        let mut core = DeviceCore::new(
+            interface,
+            Config::new(),
+            InterfaceSettings::new(true, true, false),
+        );
+        core.ctrl9_handshake_statusint = true;
+        let mut delay = MockDelay::default();
+        assert_eq!(
+            block_on(core.wait_ctrl9_done(&mut delay)),
+            Err(Error::NotReady)
+        );
+        assert_eq!(delay.calls, 1_000);
+    }
+
+    #[test]
+    fn ctrl9_propagates_bus_errors() {
+        let mut interface = MockInterface::default();
+        interface.statusint_reads.push_back(Err(Error::Bus));
+        let mut core = DeviceCore::new(
+            interface,
+            Config::new(),
+            InterfaceSettings::new(true, true, false),
+        );
+        let mut delay = MockDelay::default();
+        assert_eq!(block_on(core.wait_ctrl9_done(&mut delay)), Err(Error::Bus));
+        assert_eq!(delay.calls, 0);
+    }
+
+    #[test]
+    fn ctrl9_acknowledges_status1_completion() {
+        let interface =
+            MockInterface::default().with_reg(Register::Status1.addr(), status1::CMD_DONE);
+        let mut core = DeviceCore::new(
+            interface,
+            Config::new(),
+            InterfaceSettings::new(true, true, false),
+        );
+        let mut delay = MockDelay::default();
+        block_on(core.wait_ctrl9_done(&mut delay)).unwrap();
+        assert_eq!(delay.calls, 0);
+        assert_eq!(
+            core.interface.writes(),
+            [(Register::Ctrl9.addr(), ctrl9::CMD_ACK)]
+        );
+    }
+
+    #[test]
+    fn ctrl9_accepts_read_to_clear_completion() {
+        let mut interface = MockInterface::default();
+        interface.ignore_ack = true;
+        interface
+            .statusint_reads
+            .extend([Ok(status_int::CMD_DONE), Ok(0)]);
+        let mut core = DeviceCore::new(
+            interface,
+            Config::new(),
+            InterfaceSettings::new(true, true, false),
+        );
+        core.ctrl9_handshake_statusint = true;
+        let mut delay = MockDelay::default();
+        block_on(core.wait_ctrl9_done(&mut delay)).unwrap();
         assert_eq!(delay.calls, 0);
     }
 

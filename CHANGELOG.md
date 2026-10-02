@@ -3,7 +3,19 @@
 All notable changes to this project will be documented in this file.
 
 ## Unreleased
-- No entries yet.
+
+### Fixed
+
+- Complete the CTRL9 command handshake by writing `CTRL_CMD_ACK` and waiting for
+  CmdDone to clear after completion.
+- Allow slower CTRL9 commands with up to 1,000 one-millisecond polling intervals
+  per completion/acknowledgement phase instead of the previous approximately
+  10 ms completion wait. Timeouts still return `Error::NotReady`.
+
+### Added
+
+- Regression tests for slow and repeated CTRL9 commands, read-to-clear completion,
+  bounded completion/acknowledgement timeouts, and bus-error propagation.
 
 ## 0.1.1 - 2026-02-09
 ### Added

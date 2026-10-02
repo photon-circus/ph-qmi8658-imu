@@ -274,6 +274,8 @@ pub mod ctrl8 {
 
 /// CTRL9 register command values.
 pub mod ctrl9 {
+    /// Acknowledge completion of a CTRL9 command.
+    pub const CMD_ACK: u8 = 0x00;
     /// Command field mask.
     pub const CMD_MASK: u8 = 0b1111_1111;
     /// No operation.
